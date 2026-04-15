@@ -1,0 +1,31 @@
+{
+	"name": "rustnes",
+	"build":{
+		"dockerfile": "Dockerfile"
+	},
+	"containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+        "PULSE_SERVER": "${localEnv:PULSE_SERVER}",
+		"DCONF_USER_CONFIG_DIR": ".config/dconf"
+    },
+    "runArgs": [
+        "--device=/dev/dxg",
+        "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+        "-v", "/mnt/wslg:/mnt/wslg"
+    ],
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"[rust]":{
+					"editor.formatOnSave": true
+				},
+				"rust-analyzer.checkOnSave": true,
+				"rust-analyzer.check.command": "clippy"
+			},
+			"extensions": [
+			]
+		}
+	}
+}
