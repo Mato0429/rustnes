@@ -1,0 +1,33 @@
+{
+    "name": "rustnes",
+    "build": {
+        "dockerfile": "./Dockerfile"
+    },
+      "runArgs": [
+        "--name=rustnes",
+        "--rm"
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/node:latest": {
+            "pnpmVersion": "latest"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "github.vscode-github-actions",
+                "ms-vscode.hexeditor",
+                "oderwat.indent-rainbow",
+                "christian-kohler.path-intellisense",
+                "tauri-apps.tauri-vscode",
+                "shardulm94.trailing-spaces",
+                "mhutchie.git-graph"
+            ],
+            "settings": {
+                "rust-analyzer.linkedProjects": [
+                    "./rustnes/src-tauri/Cargo.toml"
+                ]
+            }
+        }
+    }
+}
