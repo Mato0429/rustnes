@@ -21,7 +21,7 @@
             ],
             "settings": {
                 "rust-analyzer.linkedProjects": [
-                    "./rustnes/src-tauri/Cargo.toml"
+                    "./rustnes-app/src-tauri/Cargo.toml"
                 ]
             }
         }
