@@ -3,10 +3,6 @@
     "build": {
         "dockerfile": "./Dockerfile"
     },
-      "runArgs": [
-        "--name=rustnes",
-        "--rm"
-    ],
     "features": {
         "ghcr.io/devcontainers/features/node:latest": {
             "pnpmVersion": "latest"
