@@ -1,77 +1,64 @@
-mod cpu;
-mod mapper;
-mod nesrom;
-mod ppu;
+pub mod bus;
+pub mod cpu;
+pub mod emufile;
+pub mod mapper;
+pub mod parser;
+pub mod ppu;
 
-pub use cpu::{Cpu, CpuBus, WRAM_SIZE};
+pub use cpu::Cpu;
 pub use mapper::{Mapper, MapperFactory};
-pub use nesrom::NesRom;
-pub use ppu::{Ppu, PpuBus, VRAM_SIZE};
+pub use parser::parse_emufile;
+pub use ppu::Ppu;
 
-// TODO: Support console details
-#[derive(Debug, Clone, Copy)]
-pub enum ConsoleType {
-    NesOrFamicom,
-    VsSystem { ppu: u8, hw: u8 },
-    PlayChoise10,
-    Extended { console: u8 },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum NesTiming {
-    NtscNes,
-    PalNes,
-    MultiRegion,
-    Dendy,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct EnvInfo {
-    pub console_type: ConsoleType,
-    pub cpu_ppu_timing: NesTiming,
-    pub other_roms: u8,
-    pub expansion_device: u8, // TODO: Support expansion devices
-}
+use bus::{cpubus::WRAM_SIZE, CpuBus};
+use bus::{
+    ppubus::{PALETTE_SIZE, VRAM_SIZE},
+    PpuBus,
+};
 
 #[derive(Debug)]
 pub struct Nes {
-    cart: NesRom,
+    mapper: Box<dyn Mapper>,
     cpu: Cpu,
-    cpu_openbus: u8,
     wram: [u8; WRAM_SIZE],
-
     ppu: Ppu,
-    ppu_openbus: u8,
     vram: [u8; VRAM_SIZE],
+    palette: [u8; PALETTE_SIZE],
 }
 
 impl Nes {
-    pub fn new(cart: NesRom) -> Self {
+    pub fn new(mapper: Box<dyn Mapper>) -> Self {
         Self {
-            cart,
-
+            mapper,
             cpu: Cpu::new(),
-            cpu_openbus: 0x00,
             wram: [0; WRAM_SIZE],
-
             ppu: Ppu::new(),
-            ppu_openbus: 0x00,
             vram: [0; VRAM_SIZE],
+            palette: [0; PALETTE_SIZE],
         }
     }
 
     pub fn reset(&mut self) {
-        self.cpu.reset();
-        self.ppu.reset();
+        self.cpu.assert_reset();
     }
 
     pub fn tick(&mut self) {
         let mut cpubus = CpuBus {
-            openbus: &mut self.cpu_openbus,
+            mapper: &mut self.mapper,
             wram: &mut self.wram,
             ppu: &mut self.ppu,
         };
 
         self.cpu.tick(&mut cpubus);
+
+        let mut ppubus = PpuBus {
+            mapper: &mut self.mapper,
+            vram: &mut self.vram,
+            palette: &mut self.palette,
+        };
+
+        for _ in 0..3 {
+            self.ppu.tick(&mut ppubus);
+        }
     }
 }

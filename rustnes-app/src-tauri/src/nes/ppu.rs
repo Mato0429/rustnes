@@ -1,9 +1,6 @@
-pub const VRAM_SIZE: usize = 0x800;
+use crate::nes::bus::PpuBus;
 
-pub struct PpuBus<'a> {
-    openbus: &'a mut u8,
-    vram: &'a mut [u8; VRAM_SIZE],
-}
+pub const VRAM_SIZE: usize = 0x800;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ppu {}
@@ -13,7 +10,11 @@ impl Ppu {
         Self {}
     }
 
-    pub fn reset(&mut self) {}
-
     pub fn tick(&mut self, bus: &mut PpuBus) {}
+
+    pub fn cpu_read(&mut self, addr: u16) -> u8 {
+        todo!()
+    }
+
+    pub fn cpu_write(&mut self, addr: u16, data: u8) {}
 }
