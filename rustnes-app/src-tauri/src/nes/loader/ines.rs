@@ -1,5 +1,7 @@
+use crate::nes::mapper::MapperCtx;
+
 use super::*;
-use std::io::{self, BufReader, Read};
+use std::io::{self, Read};
 
 const HEADER_SIZE: usize = 0x10;
 const FILE_IDENTIFIER: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
@@ -46,14 +48,12 @@ impl RawHeader {
     }
 }
 
-pub struct InesParser;
+pub struct InesLoader;
 
-impl EmuFileParser for InesParser {
-    fn parse<R: Read>(data: R) -> io::Result<EmuFile> {
-        let mut reader = BufReader::new(data);
+impl EmuFileLoader for InesLoader {
+    fn parse<R: Read>(reader: &mut R) -> io::Result<EmuFile> {
         let mut header_data = [0u8; HEADER_SIZE];
         reader.read_exact(&mut header_data)?;
-
         let rawheader = RawHeader::new(&header_data);
 
         if rawheader.file_identifier != FILE_IDENTIFIER {
@@ -108,7 +108,7 @@ impl EmuFileParser for InesParser {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let rom_info = RomInfo {
+        let mapper_ctx = MapperCtx {
             mapper_id,
             submapper: 0,
             hardwired_nt,
@@ -119,6 +119,8 @@ impl EmuFileParser for InesParser {
             chrram_size: CHRRAM_PLACEHOLDER_SIZE,
         };
 
+        let nesrom = mapper_ctx.create();
+
         let env_info = EnvInfo {
             console_type,
             cpu_ppu_timing,
@@ -126,6 +128,6 @@ impl EmuFileParser for InesParser {
             expansion_device: 0,
         };
 
-        Ok(EmuFile { rom_info, env_info })
+        Ok(EmuFile { nesrom, env_info })
     }
 }

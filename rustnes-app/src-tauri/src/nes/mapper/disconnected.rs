@@ -1,16 +1,10 @@
 use super::{MapperLogic, PpuReadHook, PpuWriteHook};
-use crate::nes::{bus::BusData, mapper::MapperCtx};
+use crate::nes::bus::BusData;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Nrom {}
+pub struct Disconnected;
 
-impl Nrom {
-    pub fn new(ctx: MapperCtx) -> Self {
-        todo!();
-    }
-}
-
-impl MapperLogic for Nrom {
+impl MapperLogic for Disconnected {
     fn irq_active(&self) -> bool {
         false
     }

@@ -1,20 +1,23 @@
-use crate::nes::bus::PpuBus;
+mod palette;
 
-pub const VRAM_SIZE: usize = 0x800;
+use crate::nes::{bus::BusData, PpuBus};
+pub use palette::Palette;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ppu {}
 
 impl Ppu {
     pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn tick(&mut self, bus: &mut PpuBus) {}
-
-    pub fn cpu_read(&mut self, addr: u16) -> u8 {
         todo!()
     }
 
-    pub fn cpu_write(&mut self, addr: u16, data: u8) {}
+    pub fn read_register(&mut self, addr: u8) -> BusData {
+        todo!()
+    }
+
+    pub fn write_register(&mut self, addr: u8, data: u8) {}
+
+    pub fn cpu_step(&mut self, bus: &mut PpuBus) {}
+
+    pub fn tick(&mut self, bus: &mut PpuBus) {}
 }

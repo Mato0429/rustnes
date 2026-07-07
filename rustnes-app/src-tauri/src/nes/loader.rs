@@ -1,4 +1,13 @@
-use crate::nes::mapper::Mirroring;
+mod ines;
+mod nes2;
+
+use crate::nes::mapper::{Mapper, Mirroring};
+use std::io::{self, Read, Seek, SeekFrom};
+
+pub use ines::InesLoader;
+pub use nes2::Nes2Loader;
+
+pub type NesRom = Mapper;
 
 // TODO: Support console details
 #[derive(Debug, Clone, Copy)]
@@ -26,19 +35,20 @@ pub struct EnvInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct RomInfo {
-    pub mapper_id: u32,
-    pub submapper: u8,
-    pub hardwired_nt: Mirroring,
-    pub alternative_nt: bool,
-    pub prgrom: Vec<u8>,
-    pub chrrom: Vec<u8>,
-    pub prgram_size: u32,
-    pub chrram_size: u32,
+pub struct EmuFile {
+    pub nesrom: NesRom,
+    pub env_info: EnvInfo,
 }
 
-#[derive(Debug, Clone)]
-pub struct EmuFile {
-    pub rom_info: RomInfo,
-    pub env_info: EnvInfo,
+pub trait EmuFileLoader {
+    fn parse<R: Read>(reader: &mut R) -> io::Result<EmuFile>;
+}
+
+pub fn parse_emufile<R: Read + Seek>(mut reader: R) -> io::Result<EmuFile> {
+    let head = reader.stream_position()?;
+
+    Nes2Loader::parse(&mut reader).or_else(|_| {
+        reader.seek(SeekFrom::Start(head))?;
+        InesLoader::parse(&mut reader)
+    })
 }

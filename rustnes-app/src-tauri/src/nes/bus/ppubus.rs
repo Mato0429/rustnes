@@ -1,45 +1,23 @@
-use crate::nes::{
-    mapper::{PpuReadHook, PpuWriteHook},
-    Mapper,
-};
-
 pub const VRAM_SIZE: usize = 0x800;
-pub const PALETTE_SIZE: usize = 0x20;
 
+/// # Mapping
+/// | Address          | Size     | Device      | Description                    |
+/// |:-----------------|:---------|:------------|:-------------------------------|
+/// | `0x0000..0x2000` | `0x2000` | PT(Mapper)  | **Panics if remapped to VRAM** |
+/// | `0x2000..0x3000` | `0x1000` | NT(Mapper)  | May be remapped to VRAM        |
+/// | `0x3000..0x3F00` |          | NT(Mirror)  | `0x2000..0x2EFF`               |
+/// | `0x3F00..0x4000` | `0x0100` | Palette RAM | **Panics on access**           |
+/// | `0x4000..`       | `0xC000` | OutOfScope  | **Panics on access**           |
+#[derive(Debug)]
 pub struct PpuBus<'a> {
+    pub openbus: &'a mut u8,
     pub vram: &'a mut [u8; VRAM_SIZE],
-    pub mapper: &'a mut Box<dyn Mapper>,
-    pub palette: &'a mut [u8; PALETTE_SIZE],
 }
 
 impl<'a> PpuBus<'a> {
     pub fn read(&mut self, addr: u16) -> u8 {
-        match addr {
-            0x0000..0x3F00 => {
-                let hook = self.mapper.ppu_read(addr & 0xFFF);
-                match hook {
-                    PpuReadHook::InternalVram(addr) => self.vram[(addr as usize) & 0x7FF],
-                    PpuReadHook::ExternalVram(data) => data,
-                }
-            }
-            0x3F00..0x3FFF => self.palette[(addr as usize) & 0x1F],
-            0x3FFF..=u16::MAX => panic!(""),
-        }
+        todo!()
     }
 
-    pub fn write(&mut self, addr: u16, data: u8) {
-        match addr {
-            0x0000..0x3F00 => {
-                let hook = self.mapper.ppu_write(addr & 0xFFF, data);
-                match hook {
-                    PpuWriteHook::InternalVram(vram_addr, data) => {
-                        self.vram[(vram_addr as usize) & 0x7FF] = data;
-                    }
-                    PpuWriteHook::ExternalVram => (),
-                }
-            }
-            0x3F00..0x3FFF => self.palette[(addr as usize) & 0x1F] = data,
-            0x3FFF..=u16::MAX => panic!(""),
-        }
-    }
+    pub fn write(&mut self, addr: u16, data: u8) {}
 }

@@ -1,5 +1,6 @@
 use super::*;
-use std::io::{self, BufReader, Read};
+use crate::nes::mapper::MapperCtx;
+use std::io::{self, Read};
 
 const HEADER_SIZE: usize = 0x10;
 const FILE_IDENTIFIER: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
@@ -67,9 +68,9 @@ impl RawHeader {
     }
 }
 
-pub struct Nes2Parser;
+pub struct Nes2Loader;
 
-impl Nes2Parser {
+impl Nes2Loader {
     fn calculate_rom_size(lsb: u8, msb: u8, chunk_size: u32) -> u32 {
         if lsb == 0xFF {
             let exp = ((lsb & 0xFC) >> 2) as u32;
@@ -81,12 +82,10 @@ impl Nes2Parser {
     }
 }
 
-impl EmuFileParser for Nes2Parser {
-    fn parse<R: Read>(data: R) -> io::Result<EmuFile> {
-        let mut reader = BufReader::new(data);
+impl EmuFileLoader for Nes2Loader {
+    fn parse<R: Read>(reader: &mut R) -> io::Result<EmuFile> {
         let mut header_data = [0u8; HEADER_SIZE];
         reader.read_exact(&mut header_data)?;
-
         let rawheader = RawHeader::new(&header_data);
 
         if rawheader.file_identifier != FILE_IDENTIFIER {
@@ -181,7 +180,7 @@ impl EmuFileParser for Nes2Parser {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let rom_info = RomInfo {
+        let mapper_ctx = MapperCtx {
             mapper_id,
             submapper: rawheader.submapper,
             hardwired_nt,
@@ -192,6 +191,8 @@ impl EmuFileParser for Nes2Parser {
             chrram_size,
         };
 
+        let nesrom = mapper_ctx.create();
+
         let env_info = EnvInfo {
             console_type,
             cpu_ppu_timing,
@@ -199,6 +200,6 @@ impl EmuFileParser for Nes2Parser {
             expansion_device: rawheader.expansion_device,
         };
 
-        Ok(EmuFile { rom_info, env_info })
+        Ok(EmuFile { nesrom, env_info })
     }
 }
