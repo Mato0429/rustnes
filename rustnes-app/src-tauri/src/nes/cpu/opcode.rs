@@ -1,65 +1,330 @@
-use super::{Cpu, Register, Status, Word};
-use crate::nes::NesBus;
+macro_rules! define_mnems {
+    ($($kind:ident => ($($mnem:ident),*)),*) => {
+        $(
+            #[derive(Debug, Clone, Copy)]
+            pub enum $kind {
+                $($mnem),*
+            }
+        )*
 
-pub type Addresser = fn(&mut Cpu, bus: &mut NesBus) -> Word;
+        #[derive(Debug, Clone, Copy)]
+        pub enum Mnemonic {
+            $($kind($kind)),*
+        }
 
-pub type Unique = fn(&mut Cpu, bus: &mut NesBus);
-pub type Relative = fn(&Status) -> bool;
-pub type Short = fn(&mut Register);
-pub type Read = fn(&mut Register, u8);
-pub type Modify = fn(&mut Register, &mut u8);
-pub type Write = fn(&Register) -> u8;
+        $($(
+            pub const $mnem: Mnemonic = Mnemonic::$kind($kind::$mnem);
+        )*)*
+    };
+}
 
-#[derive(Debug, Clone, Copy)]
-pub enum Bounding {
-    Safe,
-    Unsafe,
+define_mnems! {
+    Unique => (JAM, BRK, RTI, RTS, JSR, JMP, PHA, PHP, PLA, PLP),
+    Branch => (BCC, BCS, BNE, BEQ, BVC, BVS, BPL, BMI),
+    Short => (INX, INY, DEX, DEY, CLC, CLD, CLI, CLV, SEC, SED, SEI, TAX, TAY, TSX, TXA, TYA, TXS),
+    Read => (NOP, ADC, SBC, AND, ORA, EOR, BIT, CMP, CPX, CPY, LDA, LDX, LDY, LAX, LXA, LAS, ALR, ARR, ANC, AXS, ANE),
+    Modify => (ASL, LSR, ROL, ROR, INC, DEC, DCP, ISB, RRA, RLA, SLO, SRE),
+    Write => (STA, STY, SAX, SBX, STX, SHA, SHX, SHY, SHS)
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Indexer {
-    X,
-    Y,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum IndexType {
-    Unindexed,
-    Indexed(Bounding, Indexer),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum MemAccess {
-    Read(Read),
-    Modify(Modify),
-    Write(Write),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Operator {
-    Unique(Unique),
-    Relative(Relative),
-    Short(Short),
-    Accumulator(Modify),
-    MemAccess(MemAccess, IndexType),
-}
-
-// Opcode
-// + Unique
-// + Relative
-// + Short
-// + Accumulator
-// + MemAccess
-//   + Unindexed
-//   + Indexed(bounding, indexer)
-
-/*
+pub enum Addressing {
+    Implied,
+    Accumulator,
+    Immediate,
+    Relative,
     Zeropage,
     ZeropageX,
     ZeropageY,
     Absolute,
     AbsoluteX,
     AbsoluteY,
-    XIndexedIndirect,
-    IndirectYIndexed,
-*/
+    XIdxedInd,
+    IndYIdxed,
+    AbsoluteInd,
+    Undefined,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Opcode {
+    pub mnemonic: Mnemonic,
+    pub addressing: Addressing,
+    pub is_official: bool,
+}
+
+use Addressing::*;
+
+#[rustfmt::skip]
+pub const OPCODE_TABLE: [Opcode; 256] = [
+    /* 0x00 */ Opcode{ mnemonic: BRK, addressing: Implied, is_official: true },
+    /* 0x01 */ Opcode{ mnemonic: ORA, addressing: XIdxedInd, is_official: true },
+    /* 0x02 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x03 */ Opcode{ mnemonic: SLO, addressing: XIdxedInd, is_official: false },
+    /* 0x04 */ Opcode{ mnemonic: NOP, addressing: Zeropage, is_official: false },
+    /* 0x05 */ Opcode{ mnemonic: ORA, addressing: Zeropage, is_official: true },
+    /* 0x06 */ Opcode{ mnemonic: ASL, addressing: Zeropage, is_official: true },
+    /* 0x07 */ Opcode{ mnemonic: SLO, addressing: Zeropage, is_official: false },
+    /* 0x08 */ Opcode{ mnemonic: PHP, addressing: Implied, is_official: true },
+    /* 0x09 */ Opcode{ mnemonic: ORA, addressing: Immediate, is_official: true },
+    /* 0x0A */ Opcode{ mnemonic: ASL, addressing: Accumulator, is_official: true },
+    /* 0x0B */ Opcode{ mnemonic: ANC, addressing: Immediate, is_official: false },
+    /* 0x0C */ Opcode{ mnemonic: NOP, addressing: Absolute, is_official: false },
+    /* 0x0D */ Opcode{ mnemonic: ORA, addressing: Absolute, is_official: true },
+    /* 0x0E */ Opcode{ mnemonic: ASL, addressing: Absolute, is_official: true },
+    /* 0x0F */ Opcode{ mnemonic: SLO, addressing: Absolute, is_official: false },
+
+    /* 0x10 */ Opcode{ mnemonic: BPL, addressing: Relative, is_official: true },
+    /* 0x11 */ Opcode{ mnemonic: ORA, addressing: IndYIdxed, is_official: true },
+    /* 0x12 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x13 */ Opcode{ mnemonic: SLO, addressing: IndYIdxed, is_official: false },
+    /* 0x14 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0x15 */ Opcode{ mnemonic: ORA, addressing: ZeropageX, is_official: true },
+    /* 0x16 */ Opcode{ mnemonic: ASL, addressing: ZeropageX, is_official: true },
+    /* 0x17 */ Opcode{ mnemonic: SLO, addressing: ZeropageX, is_official: false },
+    /* 0x18 */ Opcode{ mnemonic: CLC, addressing: Implied, is_official: true },
+    /* 0x19 */ Opcode{ mnemonic: ORA, addressing: AbsoluteY, is_official: true },
+    /* 0x1A */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: false },
+    /* 0x1B */ Opcode{ mnemonic: SLO, addressing: AbsoluteY, is_official: false },
+    /* 0x1C */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: false },
+    /* 0x1D */ Opcode{ mnemonic: ORA, addressing: AbsoluteX, is_official: true },
+    /* 0x1E */ Opcode{ mnemonic: ASL, addressing: AbsoluteX, is_official: true },
+    /* 0x1F */ Opcode{ mnemonic: SLO, addressing: AbsoluteX, is_official: false },
+
+    /* 0x20 */ Opcode{ mnemonic: JSR, addressing: Absolute, is_official: true },
+    /* 0x21 */ Opcode{ mnemonic: AND, addressing: XIdxedInd, is_official: true },
+    /* 0x22 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x23 */ Opcode{ mnemonic: RLA, addressing: XIdxedInd, is_official: false },
+    /* 0x24 */ Opcode{ mnemonic: BIT, addressing: Zeropage, is_official: true },
+    /* 0x25 */ Opcode{ mnemonic: AND, addressing: Zeropage, is_official: true },
+    /* 0x26 */ Opcode{ mnemonic: ROL, addressing: Zeropage, is_official: true },
+    /* 0x27 */ Opcode{ mnemonic: RLA, addressing: Zeropage, is_official: false },
+    /* 0x28 */ Opcode{ mnemonic: PLP, addressing: Implied, is_official: true },
+    /* 0x29 */ Opcode{ mnemonic: AND, addressing: Immediate, is_official: true },
+    /* 0x2A */ Opcode{ mnemonic: ROL, addressing: Accumulator, is_official: true },
+    /* 0x2B */ Opcode{ mnemonic: ANC, addressing: Immediate, is_official: false },
+    /* 0x2C */ Opcode{ mnemonic: BIT, addressing: Absolute, is_official: false },
+    /* 0x2D */ Opcode{ mnemonic: AND, addressing: Absolute, is_official: true },
+    /* 0x2E */ Opcode{ mnemonic: ROL, addressing: Absolute, is_official: true },
+    /* 0x2F */ Opcode{ mnemonic: RLA, addressing: Absolute, is_official: false },
+
+    /* 0x30 */ Opcode{ mnemonic: BMI, addressing: Relative, is_official: true },
+    /* 0x31 */ Opcode{ mnemonic: AND, addressing: IndYIdxed, is_official: true },
+    /* 0x32 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x33 */ Opcode{ mnemonic: RLA, addressing: IndYIdxed, is_official: false },
+    /* 0x34 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0x35 */ Opcode{ mnemonic: AND, addressing: ZeropageX, is_official: true },
+    /* 0x36 */ Opcode{ mnemonic: ROL, addressing: ZeropageX, is_official: true },
+    /* 0x37 */ Opcode{ mnemonic: RLA, addressing: ZeropageX, is_official: false },
+    /* 0x38 */ Opcode{ mnemonic: SEC, addressing: Implied, is_official: true },
+    /* 0x39 */ Opcode{ mnemonic: AND, addressing: AbsoluteY, is_official: true },
+    /* 0x3A */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: false },
+    /* 0x3B */ Opcode{ mnemonic: RLA, addressing: AbsoluteY, is_official: false },
+    /* 0x3C */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: false },
+    /* 0x3D */ Opcode{ mnemonic: AND, addressing: AbsoluteX, is_official: true },
+    /* 0x3E */ Opcode{ mnemonic: ROL, addressing: AbsoluteX, is_official: true },
+    /* 0x3F */ Opcode{ mnemonic: RLA, addressing: AbsoluteX, is_official: false },
+
+    /* 0x40 */ Opcode{ mnemonic: RTI, addressing: Implied, is_official: true },
+    /* 0x41 */ Opcode{ mnemonic: EOR, addressing: XIdxedInd, is_official: true },
+    /* 0x42 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x43 */ Opcode{ mnemonic: SRE, addressing: XIdxedInd, is_official: false },
+    /* 0x44 */ Opcode{ mnemonic: NOP, addressing: Zeropage, is_official: false },
+    /* 0x45 */ Opcode{ mnemonic: EOR, addressing: Zeropage, is_official: true },
+    /* 0x46 */ Opcode{ mnemonic: LSR, addressing: Zeropage, is_official: true },
+    /* 0x47 */ Opcode{ mnemonic: SRE, addressing: Zeropage, is_official: false },
+    /* 0x48 */ Opcode{ mnemonic: PHA, addressing: Implied, is_official: true },
+    /* 0x49 */ Opcode{ mnemonic: EOR, addressing: Immediate, is_official: true },
+    /* 0x4A */ Opcode{ mnemonic: LSR, addressing: Accumulator, is_official: true },
+    /* 0x4B */ Opcode{ mnemonic: ALR, addressing: Immediate, is_official: false },
+    /* 0x4C */ Opcode{ mnemonic: JMP, addressing: Absolute, is_official: true },
+    /* 0x4D */ Opcode{ mnemonic: EOR, addressing: Absolute, is_official: true },
+    /* 0x4E */ Opcode{ mnemonic: LSR, addressing: Absolute, is_official: true },
+    /* 0x4F */ Opcode{ mnemonic: SRE, addressing: Absolute, is_official: false },
+
+    /* 0x50 */ Opcode{ mnemonic: BVC, addressing: Relative, is_official: true },
+    /* 0x51 */ Opcode{ mnemonic: EOR, addressing: IndYIdxed, is_official: true },
+    /* 0x52 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x53 */ Opcode{ mnemonic: SRE, addressing: IndYIdxed, is_official: false },
+    /* 0x54 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0x55 */ Opcode{ mnemonic: EOR, addressing: ZeropageX, is_official: true },
+    /* 0x56 */ Opcode{ mnemonic: LSR, addressing: ZeropageX, is_official: true },
+    /* 0x57 */ Opcode{ mnemonic: SRE, addressing: ZeropageX, is_official: false },
+    /* 0x58 */ Opcode{ mnemonic: CLI, addressing: Implied, is_official: true },
+    /* 0x59 */ Opcode{ mnemonic: EOR, addressing: AbsoluteY, is_official: true },
+    /* 0x5A */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: true },
+    /* 0x5B */ Opcode{ mnemonic: SRE, addressing: AbsoluteY, is_official: false },
+    /* 0x5C */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: true },
+    /* 0x5D */ Opcode{ mnemonic: EOR, addressing: AbsoluteX, is_official: true },
+    /* 0x5E */ Opcode{ mnemonic: LSR, addressing: AbsoluteX, is_official: true },
+    /* 0x5F */ Opcode{ mnemonic: SRE, addressing: AbsoluteX, is_official: false },
+
+    /* 0x60 */ Opcode{ mnemonic: RTS, addressing: Implied, is_official: true },
+    /* 0x61 */ Opcode{ mnemonic: ADC, addressing: XIdxedInd, is_official: true },
+    /* 0x62 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x63 */ Opcode{ mnemonic: RRA, addressing: XIdxedInd, is_official: false },
+    /* 0x64 */ Opcode{ mnemonic: NOP, addressing: Zeropage, is_official: false },
+    /* 0x65 */ Opcode{ mnemonic: ADC, addressing: Zeropage, is_official: true },
+    /* 0x66 */ Opcode{ mnemonic: ROR, addressing: Zeropage, is_official: true },
+    /* 0x67 */ Opcode{ mnemonic: RRA, addressing: Zeropage, is_official: false },
+    /* 0x68 */ Opcode{ mnemonic: PLA, addressing: Implied, is_official: true },
+    /* 0x69 */ Opcode{ mnemonic: ADC, addressing: Immediate, is_official: true },
+    /* 0x6A */ Opcode{ mnemonic: ROR, addressing: Accumulator, is_official: true },
+    /* 0x6B */ Opcode{ mnemonic: ARR, addressing: Immediate, is_official: false },
+    /* 0x6C */ Opcode{ mnemonic: JMP, addressing: AbsoluteInd, is_official: true },
+    /* 0x6D */ Opcode{ mnemonic: ADC, addressing: Absolute, is_official: true },
+    /* 0x6E */ Opcode{ mnemonic: ROR, addressing: Absolute, is_official: true },
+    /* 0x6F */ Opcode{ mnemonic: RRA, addressing: Absolute, is_official: false },
+
+    /* 0x70 */ Opcode{ mnemonic: BVS, addressing: Relative, is_official: true },
+    /* 0x71 */ Opcode{ mnemonic: ADC, addressing: IndYIdxed, is_official: true },
+    /* 0x72 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x73 */ Opcode{ mnemonic: RRA, addressing: IndYIdxed, is_official: false },
+    /* 0x74 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0x75 */ Opcode{ mnemonic: ADC, addressing: ZeropageX, is_official: true },
+    /* 0x76 */ Opcode{ mnemonic: ROR, addressing: ZeropageX, is_official: true },
+    /* 0x77 */ Opcode{ mnemonic: RRA, addressing: ZeropageX, is_official: false },
+    /* 0x78 */ Opcode{ mnemonic: SEI, addressing: Implied, is_official: true },
+    /* 0x79 */ Opcode{ mnemonic: ADC, addressing: AbsoluteY, is_official: true },
+    /* 0x7A */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: true },
+    /* 0x7B */ Opcode{ mnemonic: RRA, addressing: AbsoluteY, is_official: false },
+    /* 0x7C */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: true },
+    /* 0x7D */ Opcode{ mnemonic: ADC, addressing: AbsoluteX, is_official: true },
+    /* 0x7E */ Opcode{ mnemonic: ROR, addressing: AbsoluteX, is_official: true },
+    /* 0x7F */ Opcode{ mnemonic: RRA, addressing: AbsoluteX, is_official: false },
+
+    /* 0x80 */ Opcode{ mnemonic: NOP, addressing: Immediate, is_official: true },
+    /* 0x81 */ Opcode{ mnemonic: STA, addressing: XIdxedInd, is_official: true },
+    /* 0x82 */ Opcode{ mnemonic: NOP, addressing: Immediate, is_official: false },
+    /* 0x83 */ Opcode{ mnemonic: SAX, addressing: XIdxedInd, is_official: false },
+    /* 0x84 */ Opcode{ mnemonic: STY, addressing: Zeropage, is_official: false },
+    /* 0x85 */ Opcode{ mnemonic: STA, addressing: Zeropage, is_official: true },
+    /* 0x86 */ Opcode{ mnemonic: STX, addressing: Zeropage, is_official: true },
+    /* 0x87 */ Opcode{ mnemonic: SAX, addressing: Zeropage, is_official: false },
+    /* 0x88 */ Opcode{ mnemonic: DEY, addressing: Implied, is_official: true },
+    /* 0x89 */ Opcode{ mnemonic: NOP, addressing: Immediate, is_official: true },
+    /* 0x8A */ Opcode{ mnemonic: TXA, addressing: Implied, is_official: true },
+    /* 0x8B */ Opcode{ mnemonic: ANE, addressing: Immediate, is_official: false },
+    /* 0x8C */ Opcode{ mnemonic: STY, addressing: Absolute, is_official: true },
+    /* 0x8D */ Opcode{ mnemonic: STA, addressing: Absolute, is_official: true },
+    /* 0x8E */ Opcode{ mnemonic: STX, addressing: Absolute, is_official: true },
+    /* 0x8F */ Opcode{ mnemonic: SAX, addressing: Absolute, is_official: false },
+
+    /* 0x90 */ Opcode{ mnemonic: BCC, addressing: Relative, is_official: true },
+    /* 0x91 */ Opcode{ mnemonic: STA, addressing: IndYIdxed, is_official: true },
+    /* 0x92 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0x93 */ Opcode{ mnemonic: SHA, addressing: IndYIdxed, is_official: false },
+    /* 0x94 */ Opcode{ mnemonic: STY, addressing: ZeropageX, is_official: false },
+    /* 0x95 */ Opcode{ mnemonic: STA, addressing: ZeropageX, is_official: true },
+    /* 0x96 */ Opcode{ mnemonic: STX, addressing: ZeropageX, is_official: true },
+    /* 0x97 */ Opcode{ mnemonic: SAX, addressing: ZeropageX, is_official: false },
+    /* 0x98 */ Opcode{ mnemonic: TYA, addressing: Implied, is_official: true },
+    /* 0x99 */ Opcode{ mnemonic: STA, addressing: AbsoluteY, is_official: true },
+    /* 0x9A */ Opcode{ mnemonic: TXS, addressing: Implied, is_official: true },
+    /* 0x9B */ Opcode{ mnemonic: SHS, addressing: AbsoluteY, is_official: false },
+    /* 0x9C */ Opcode{ mnemonic: SHY, addressing: AbsoluteX, is_official: true },
+    /* 0x9D */ Opcode{ mnemonic: STA, addressing: AbsoluteX, is_official: true },
+    /* 0x9E */ Opcode{ mnemonic: SHX, addressing: AbsoluteX, is_official: true },
+    /* 0x9F */ Opcode{ mnemonic: SHA, addressing: AbsoluteX, is_official: false },
+
+    /* 0xA0 */ Opcode{ mnemonic: LDY, addressing: Immediate, is_official: true },
+    /* 0xA1 */ Opcode{ mnemonic: LDA, addressing: XIdxedInd, is_official: true },
+    /* 0xA2 */ Opcode{ mnemonic: LDX, addressing: Immediate, is_official: false },
+    /* 0xA3 */ Opcode{ mnemonic: LAX, addressing: XIdxedInd, is_official: false },
+    /* 0xA4 */ Opcode{ mnemonic: LDY, addressing: Zeropage, is_official: false },
+    /* 0xA5 */ Opcode{ mnemonic: LDA, addressing: Zeropage, is_official: true },
+    /* 0xA6 */ Opcode{ mnemonic: LDX, addressing: Zeropage, is_official: true },
+    /* 0xA7 */ Opcode{ mnemonic: LAX, addressing: Zeropage, is_official: false },
+    /* 0xA8 */ Opcode{ mnemonic: TAY, addressing: Implied, is_official: true },
+    /* 0xA9 */ Opcode{ mnemonic: LDA, addressing: Immediate, is_official: true },
+    /* 0xAA */ Opcode{ mnemonic: TAX, addressing: Implied, is_official: true },
+    /* 0xAB */ Opcode{ mnemonic: LXA, addressing: Immediate, is_official: false },
+    /* 0xAC */ Opcode{ mnemonic: LDY, addressing: Absolute, is_official: true },
+    /* 0xAD */ Opcode{ mnemonic: LDA, addressing: Absolute, is_official: true },
+    /* 0xAE */ Opcode{ mnemonic: LDX, addressing: Absolute, is_official: true },
+    /* 0xAF */ Opcode{ mnemonic: LAX, addressing: Absolute, is_official: false },
+
+    /* 0xB0 */ Opcode{ mnemonic: BCS, addressing: Relative, is_official: true },
+    /* 0xB1 */ Opcode{ mnemonic: LDA, addressing: IndYIdxed, is_official: true },
+    /* 0xB2 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0xB3 */ Opcode{ mnemonic: LAX, addressing: IndYIdxed, is_official: false },
+    /* 0xB4 */ Opcode{ mnemonic: LDY, addressing: ZeropageX, is_official: false },
+    /* 0xB5 */ Opcode{ mnemonic: LDA, addressing: ZeropageX, is_official: true },
+    /* 0xB6 */ Opcode{ mnemonic: LDX, addressing: ZeropageX, is_official: true },
+    /* 0xB7 */ Opcode{ mnemonic: LAX, addressing: ZeropageX, is_official: false },
+    /* 0xB8 */ Opcode{ mnemonic: CLV, addressing: Implied, is_official: true },
+    /* 0xB9 */ Opcode{ mnemonic: LDA, addressing: AbsoluteY, is_official: true },
+    /* 0xBA */ Opcode{ mnemonic: TSX, addressing: Implied, is_official: true },
+    /* 0xBB */ Opcode{ mnemonic: LAS, addressing: AbsoluteY, is_official: false },
+    /* 0xBC */ Opcode{ mnemonic: LDY, addressing: AbsoluteX, is_official: true },
+    /* 0xBD */ Opcode{ mnemonic: LDA, addressing: AbsoluteX, is_official: true },
+    /* 0xBE */ Opcode{ mnemonic: LDX, addressing: AbsoluteX, is_official: true },
+    /* 0xBF */ Opcode{ mnemonic: LAX, addressing: AbsoluteX, is_official: false },
+
+    /* 0xC0 */ Opcode{ mnemonic: CPY, addressing: Immediate, is_official: true },
+    /* 0xC1 */ Opcode{ mnemonic: CMP, addressing: XIdxedInd, is_official: true },
+    /* 0xC2 */ Opcode{ mnemonic: NOP, addressing: Immediate, is_official: false },
+    /* 0xC3 */ Opcode{ mnemonic: DCP, addressing: XIdxedInd, is_official: false },
+    /* 0xC4 */ Opcode{ mnemonic: CPY, addressing: Zeropage, is_official: false },
+    /* 0xC5 */ Opcode{ mnemonic: CMP, addressing: Zeropage, is_official: true },
+    /* 0xC6 */ Opcode{ mnemonic: DEC, addressing: Zeropage, is_official: true },
+    /* 0xC7 */ Opcode{ mnemonic: DCP, addressing: Zeropage, is_official: false },
+    /* 0xC8 */ Opcode{ mnemonic: INY, addressing: Implied, is_official: true },
+    /* 0xC9 */ Opcode{ mnemonic: CMP, addressing: Immediate, is_official: true },
+    /* 0xCA */ Opcode{ mnemonic: DEX, addressing: Implied, is_official: true },
+    /* 0xCB */ Opcode{ mnemonic: SBX, addressing: Immediate, is_official: false },
+    /* 0xCC */ Opcode{ mnemonic: CPY, addressing: Absolute, is_official: true },
+    /* 0xCD */ Opcode{ mnemonic: CMP, addressing: Absolute, is_official: true },
+    /* 0xCE */ Opcode{ mnemonic: DEC, addressing: Absolute, is_official: true },
+    /* 0xCF */ Opcode{ mnemonic: DCP, addressing: Absolute, is_official: false },
+
+    /* 0xD0 */ Opcode{ mnemonic: BNE, addressing: Relative, is_official: true },
+    /* 0xD1 */ Opcode{ mnemonic: CMP, addressing: IndYIdxed, is_official: true },
+    /* 0xD2 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0xD3 */ Opcode{ mnemonic: DCP, addressing: IndYIdxed, is_official: false },
+    /* 0xD4 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0xD5 */ Opcode{ mnemonic: CMP, addressing: ZeropageX, is_official: true },
+    /* 0xD6 */ Opcode{ mnemonic: DEC, addressing: ZeropageX, is_official: true },
+    /* 0xD7 */ Opcode{ mnemonic: DCP, addressing: ZeropageX, is_official: false },
+    /* 0xD8 */ Opcode{ mnemonic: CLD, addressing: Implied, is_official: true },
+    /* 0xD9 */ Opcode{ mnemonic: CMP, addressing: AbsoluteY, is_official: true },
+    /* 0xDA */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: true },
+    /* 0xDB */ Opcode{ mnemonic: DCP, addressing: AbsoluteY, is_official: false },
+    /* 0xDC */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: true },
+    /* 0xDD */ Opcode{ mnemonic: CMP, addressing: AbsoluteX, is_official: true },
+    /* 0xDE */ Opcode{ mnemonic: DEC, addressing: AbsoluteX, is_official: true },
+    /* 0xDF */ Opcode{ mnemonic: DCP, addressing: AbsoluteX, is_official: false },
+
+    /* 0xE0 */ Opcode{ mnemonic: CPX, addressing: Immediate, is_official: true },
+    /* 0xE1 */ Opcode{ mnemonic: SBC, addressing: XIdxedInd, is_official: true },
+    /* 0xE2 */ Opcode{ mnemonic: NOP, addressing: Immediate, is_official: false },
+    /* 0xE3 */ Opcode{ mnemonic: ISB, addressing: XIdxedInd, is_official: false },
+    /* 0xE4 */ Opcode{ mnemonic: CPX, addressing: Zeropage, is_official: false },
+    /* 0xE5 */ Opcode{ mnemonic: SBC, addressing: Zeropage, is_official: true },
+    /* 0xE6 */ Opcode{ mnemonic: INC, addressing: Zeropage, is_official: true },
+    /* 0xE7 */ Opcode{ mnemonic: ISB, addressing: Zeropage, is_official: false },
+    /* 0xE8 */ Opcode{ mnemonic: INX, addressing: Implied, is_official: true },
+    /* 0xE9 */ Opcode{ mnemonic: SBC, addressing: Immediate, is_official: true },
+    /* 0xEA */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: true },
+    /* 0xEB */ Opcode{ mnemonic: SBC, addressing: Immediate, is_official: false },
+    /* 0xEC */ Opcode{ mnemonic: CPX, addressing: Absolute, is_official: true },
+    /* 0xED */ Opcode{ mnemonic: SBC, addressing: Absolute, is_official: true },
+    /* 0xEE */ Opcode{ mnemonic: INC, addressing: Absolute, is_official: true },
+    /* 0xEF */ Opcode{ mnemonic: ISB, addressing: Absolute, is_official: false },
+
+    /* 0xF0 */ Opcode{ mnemonic: BEQ, addressing: Relative, is_official: true },
+    /* 0xF1 */ Opcode{ mnemonic: SBC, addressing: IndYIdxed, is_official: true },
+    /* 0xF2 */ Opcode{ mnemonic: JAM, addressing: Undefined, is_official: false },
+    /* 0xF3 */ Opcode{ mnemonic: ISB, addressing: IndYIdxed, is_official: false },
+    /* 0xF4 */ Opcode{ mnemonic: NOP, addressing: ZeropageX, is_official: false },
+    /* 0xF5 */ Opcode{ mnemonic: SBC, addressing: ZeropageX, is_official: true },
+    /* 0xF6 */ Opcode{ mnemonic: INC, addressing: ZeropageX, is_official: true },
+    /* 0xF7 */ Opcode{ mnemonic: ISB, addressing: ZeropageX, is_official: false },
+    /* 0xF8 */ Opcode{ mnemonic: SED, addressing: Implied, is_official: true },
+    /* 0xF9 */ Opcode{ mnemonic: SBC, addressing: AbsoluteY, is_official: true },
+    /* 0xFA */ Opcode{ mnemonic: NOP, addressing: Implied, is_official: true },
+    /* 0xFB */ Opcode{ mnemonic: ISB, addressing: AbsoluteY, is_official: false },
+    /* 0xFC */ Opcode{ mnemonic: NOP, addressing: AbsoluteX, is_official: true },
+    /* 0xFD */ Opcode{ mnemonic: SBC, addressing: AbsoluteX, is_official: true },
+    /* 0xFE */ Opcode{ mnemonic: INC, addressing: AbsoluteX, is_official: true },
+    /* 0xFF */ Opcode{ mnemonic: ISB, addressing: AbsoluteX, is_official: false },
+];

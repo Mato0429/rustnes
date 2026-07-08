@@ -2,7 +2,7 @@ mod opcode;
 
 use crate::nes::{bus::CpuBus, NesBus};
 use modular_bitfield::prelude::*;
-use opcode::Relative;
+use opcode::*;
 
 const ZEROPAGE: u8 = 0x00;
 const STACKPAGE: u8 = 0x01;
@@ -30,8 +30,8 @@ macro_rules! cpubus {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Word {
-    lo: u8,
-    hi: u8,
+    pub lo: u8,
+    pub hi: u8,
 }
 
 impl Word {
@@ -39,12 +39,8 @@ impl Word {
         Self::from(u16::from_le_bytes(bytes))
     }
 
-    fn carrying_inc(&mut self) {
-        let (idxed_lo, crossed) = self.lo.overflowing_add(1);
-        self.lo = idxed_lo;
-        if crossed {
-            self.hi = self.hi.wrapping_add(1);
-        }
+    fn from_zeropage(lo: u8) -> Self {
+        Self::from_le_bytes([lo, ZEROPAGE])
     }
 }
 
@@ -63,17 +59,7 @@ impl From<u16> for Word {
 
 #[derive(Debug, Clone, Copy)]
 pub struct StackPtr {
-    inner: u8,
-}
-
-impl StackPtr {
-    fn inc(&mut self) {
-        self.inner = self.inner.wrapping_add(1);
-    }
-
-    fn dec(&mut self) {
-        self.inner = self.inner.wrapping_sub(1);
-    }
+    pub inner: u8,
 }
 
 impl From<StackPtr> for u8 {
@@ -108,13 +94,13 @@ pub struct Status {
 }
 
 impl Status {
-    const B: u8 = 0b0001_0000;
-    const R: u8 = 0b0010_0000;
+    const BREAK_MASK: u8 = 0b0001_0000;
+    const RESERVED_MASK: u8 = 0b0010_0000;
 
     fn as_byte(&self, b_flag: bool) -> u8 {
-        let with_r = self.into_bytes()[0] | Self::R;
+        let with_r = self.into_bytes()[0] | Self::RESERVED_MASK;
         if b_flag {
-            with_r | Self::B
+            with_r | Self::BREAK_MASK
         } else {
             with_r
         }
@@ -129,16 +115,17 @@ impl From<u8> for Status {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Register {
-    a: u8,
-    x: u8,
-    y: u8,
-    p: Status,
-    sp: StackPtr,
-    pc: Word,
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub p: Status,
+    pub sp: StackPtr,
+    pub pc: Word,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu {
+    is_jammed: bool,
     reg: Register,
 }
 
@@ -147,6 +134,7 @@ impl Cpu {
     // TODO: Enable to override initial registers(include PC), wram, and etc...
     pub fn new() -> Self {
         Self {
+            is_jammed: false,
             reg: Register {
                 a: DEFAULT_A,
                 x: DEFAULT_X,
@@ -159,10 +147,12 @@ impl Cpu {
     }
 
     pub fn reset(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
+        self.is_jammed = false;
+        self.read_at_pc(bus);
+        self.read_at_pc(bus);
         for _ in 0..3 {
-            self.read(bus, self.reg.sp);
-            self.reg.sp.dec();
+            self.read_at_sp(bus);
+            self.reg.sp.inner = self.reg.sp.inner.wrapping_sub(1);
         }
         self.reg.pc.lo = self.read(bus, RESET_VECTOR);
         self.reg.p.set_interrupt(true);
@@ -185,45 +175,97 @@ impl Cpu {
         cpubus!(bus).write(addr.into(), data);
     }
 
+    fn read_at_pc(&mut self, bus: &mut NesBus) -> u8 {
+        self.read(bus, self.reg.pc)
+    }
+
+    fn read_at_sp(&mut self, bus: &mut NesBus) -> u8 {
+        self.read(bus, self.reg.sp)
+    }
+
+    fn advance_pc(&mut self) {
+        let (idxed_lo, crossed) = self.reg.pc.lo.overflowing_add(1);
+        self.reg.pc.lo = idxed_lo;
+        if crossed {
+            self.reg.pc.hi = self.reg.pc.hi.wrapping_add(1);
+        }
+    }
+
     fn fetch(&mut self, bus: &mut NesBus) -> u8 {
-        let res = self.read(bus, self.reg.pc);
-        self.reg.pc.carrying_inc();
-        res
+        let byte = self.read_at_pc(bus);
+        self.advance_pc();
+        byte
     }
 
     fn push(&mut self, bus: &mut NesBus, data: u8) {
         self.write(bus, self.reg.sp, data);
-        self.reg.sp.dec();
+        self.reg.sp.inner = self.reg.sp.inner.wrapping_sub(1);
     }
 
     fn pop(&mut self, bus: &mut NesBus) -> u8 {
-        self.reg.sp.inc();
-        self.read(bus, self.reg.sp)
+        self.reg.sp.inner = self.reg.sp.inner.wrapping_add(1);
+        self.read_at_sp(bus)
     }
 
-    fn zeropage(&mut self, bus: &mut NesBus) -> (Word, bool) {
-        (Word::from_le_bytes([self.fetch(bus), ZEROPAGE]), false)
+    fn exec_opcode(&mut self, bus: &mut NesBus, mnem: Mnemonic, addr: Addressing) {
+        match (mnem, addr) {
+            (Mnemonic::Unique(unique), _) => self.exec_unique(bus, unique, addr),
+            (Mnemonic::Branch(branch), Addressing::Relative) => self.exec_relative(bus, branch),
+            (Mnemonic::Short(short), Addressing::Implied) => self.exec_short(bus, short),
+            _ => todo!(),
+        }
     }
 
-    fn zeropage_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> (Word, bool) {
+    fn exec_relative(&mut self, bus: &mut NesBus, mnem: Branch) {
+        let offset = self.fetch(bus) as i8;
+        let is_branched = self.operate_branch(mnem);
+
+        if !is_branched {
+            return;
+        }
+
+        self.read_at_pc(bus);
+        let (idxed_lo, crossed) = self.reg.pc.lo.overflowing_add_signed(offset);
+        self.reg.pc.lo = idxed_lo;
+
+        if !crossed {
+            // TODO: Clear polled hw interrupts to ignore
+            return;
+        }
+
+        self.read_at_pc(bus);
+        let hi_fixer = if offset > 0 { 1 } else { -1 };
+        self.reg.pc.hi = self.reg.pc.hi.wrapping_add_signed(hi_fixer);
+    }
+
+    fn exec_short(&mut self, bus: &mut NesBus, mnem: Short) {
+        self.read_at_pc(bus); // Operate after read to delay interrupt
+        self.operate_short(mnem);
+    }
+
+    fn zeropage(&mut self, bus: &mut NesBus) -> Word {
+        Word::from_zeropage(self.fetch(bus))
+    }
+
+    fn zeropage_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> Word {
         let lo = self.fetch(bus);
-        self.read(bus, Word::from_le_bytes([lo, ZEROPAGE]));
+        self.read(bus, Word::from_zeropage(lo));
         let lo = lo.wrapping_add(indexer);
-        (Word::from_le_bytes([lo, ZEROPAGE]), false)
+        Word::from_zeropage(lo)
     }
 
-    fn zeropage_x(&mut self, bus: &mut NesBus) -> (Word, bool) {
+    fn zeropage_x(&mut self, bus: &mut NesBus) -> Word {
         self.zeropage_indexed(bus, self.reg.x)
     }
 
-    fn zeropage_y(&mut self, bus: &mut NesBus) -> (Word, bool) {
+    fn zeropage_y(&mut self, bus: &mut NesBus) -> Word {
         self.zeropage_indexed(bus, self.reg.y)
     }
 
-    fn absolute(&mut self, bus: &mut NesBus) -> (Word, bool) {
+    fn absolute(&mut self, bus: &mut NesBus) -> Word {
         let lo = self.fetch(bus);
         let hi = self.fetch(bus);
-        (Word::from_le_bytes([lo, hi]), false)
+        Word::from_le_bytes([lo, hi])
     }
 
     fn absolute_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> (Word, bool) {
@@ -242,436 +284,325 @@ impl Cpu {
         self.absolute_indexed(bus, self.reg.y)
     }
 
-    fn pre_indexed_indirect(&mut self, bus: &mut NesBus) -> Word {
+    fn x_indexed_indirect(&mut self, bus: &mut NesBus) -> Word {
         let ptr = self.fetch(bus);
-        self.read(bus, Word::from_le_bytes([ptr, ZEROPAGE]));
+        self.read(bus, Word::from_zeropage(ptr));
         let ptr = ptr.wrapping_add(self.reg.x);
-        let lo = self.read(bus, Word::from_le_bytes([ptr, ZEROPAGE]));
-        let hi = self.read(bus, Word::from_le_bytes([ptr.wrapping_add(1), ZEROPAGE]));
+        let lo = self.read(bus, Word::from_zeropage(ptr));
+        let hi = self.read(bus, Word::from_zeropage(ptr.wrapping_add(1)));
         Word::from_le_bytes([lo, hi])
     }
 
-    fn post_indexed_indirect(&mut self, bus: &mut NesBus) -> (Word, bool) {
+    fn indirect_y_indexed(&mut self, bus: &mut NesBus) -> (Word, bool) {
         let ptr = self.fetch(bus);
-        let lo = self.read(bus, Word::from_le_bytes([ptr, ZEROPAGE]));
-        let hi = self.read(bus, Word::from_le_bytes([ptr.wrapping_add(1), ZEROPAGE]));
+        let lo = self.read(bus, Word::from_zeropage(ptr));
+        let hi = self.read(bus, Word::from_zeropage(ptr.wrapping_add(1)));
         let (lo, is_crossed) = lo.overflowing_add(self.reg.y);
         let addr = Word::from_le_bytes([lo, hi]);
         (addr, is_crossed)
     }
-
-    // fn exec_opcode(&mut self, bus: &mut NesBus, opcode: Opcode) {}
-
-    fn exec_relative(&mut self, bus: &mut NesBus, flag_callback: Relative) {
-        let offset = self.fetch(bus) as i8;
-        let is_branched = flag_callback(&self.reg.p);
-
-        if !is_branched {
-            return;
-        }
-
-        self.read(bus, self.reg.pc);
-        let (idxed_lo, crossed) = self.reg.pc.lo.overflowing_add_signed(offset);
-        self.reg.pc.lo = idxed_lo;
-
-        if !crossed {
-            return;
-        }
-
-        self.read(bus, self.reg.pc);
-        let hi_fixer = if offset > 0 { 1 } else { -1 };
-        self.reg.pc.hi = self.reg.pc.hi.wrapping_add_signed(hi_fixer);
-    }
 }
 
 impl Cpu {
-    fn update_nz(p: &mut Status, v: u8) {
-        p.set_carry(v & 0x80 != 0);
-        p.set_zero(v == 0);
+    fn update_nz(&mut self, v: u8) {
+        self.reg.p.set_negative(v & 0x80 != 0);
+        self.reg.p.set_zero(v == 0);
     }
 
-    fn _adc(reg: &mut Register, v: u8) {
-        let old_a = reg.a;
-        let res_u16 = old_a as u16 + v as u16 + reg.p.carry() as u16;
+    fn add_with_carry(&mut self, v: u8) {
+        let old_a = self.reg.a;
+        let res_u16 = old_a as u16 + v as u16 + self.reg.p.carry() as u16;
         let res = res_u16 as u8;
 
         let carry = 0xFF < res_u16;
         let overflow = (old_a ^ res) & (v ^ res) & 0x80 != 0;
-        reg.p.set_carry(carry);
-        reg.p.set_overflow(overflow);
-        Self::update_nz(&mut reg.p, res);
-        reg.a = res;
+        self.reg.p.set_carry(carry);
+        self.reg.p.set_overflow(overflow);
+        self.update_nz(res);
+        self.reg.a = res;
     }
 
-    fn _cmp(p: &mut Status, v: u8, w: u8) {
+    fn compare(&mut self, v: u8, w: u8) {
         let (res, borrow) = v.overflowing_sub(w);
-        p.set_carry(!borrow);
-        Self::update_nz(p, res);
-    }
-
-    // TODO: Interrupt vector hijack
-    fn brk_implied(&mut self, bus: &mut NesBus) {
-        self.fetch(bus);
-        self.push(bus, self.reg.pc.hi);
-        self.push(bus, self.reg.pc.lo);
-        self.push(bus, self.reg.p.as_byte(true));
-        self.reg.pc.lo = self.read(bus, BRK_VECTOR);
-        self.reg.p.set_interrupt(true);
-        self.reg.pc.hi = self.read(bus, BRK_VECTOR.wrapping_add(1));
-    }
-
-    fn rti_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.read(bus, self.reg.sp);
-        self.reg.p = Status::from(self.pop(bus));
-        self.reg.pc.lo = self.pop(bus);
-        self.reg.pc.hi = self.pop(bus);
-    }
-
-    fn rts_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.read(bus, self.reg.sp);
-        self.reg.pc.lo = self.pop(bus);
-        self.reg.pc.hi = self.pop(bus);
-        self.reg.pc.carrying_inc();
-    }
-
-    fn pha_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.push(bus, self.reg.a);
-    }
-
-    fn php_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.push(bus, self.reg.p.as_byte(false));
-    }
-
-    fn pla_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.read(bus, self.reg.sp);
-        self.reg.a = self.pop(bus);
-    }
-
-    fn plp_implied(&mut self, bus: &mut NesBus) {
-        self.read(bus, self.reg.pc);
-        self.read(bus, self.reg.sp);
-        self.reg.p = Status::from(self.pop(bus));
-    }
-
-    fn jsr_absolute(&mut self, bus: &mut NesBus) {
-        let lo = self.fetch(bus);
-        self.read(bus, self.reg.sp);
-        self.push(bus, self.reg.pc.hi);
-        self.push(bus, self.reg.pc.lo);
-        self.reg.pc.hi = self.fetch(bus);
-        self.reg.pc.lo = lo;
-    }
-
-    fn jmp_absolute(&mut self, bus: &mut NesBus) {
-        let lo = self.fetch(bus);
-        self.reg.pc.hi = self.fetch(bus);
-        self.reg.pc.lo = lo;
-    }
-
-    fn jmp_indirect(&mut self, bus: &mut NesBus) {
-        let mut ptr = Word::from(0);
-        ptr.lo = self.fetch(bus);
-        ptr.hi = self.fetch(bus);
-        self.reg.pc.lo = self.read(bus, ptr);
-        ptr.lo = ptr.lo.wrapping_add(1);
-        self.reg.pc.hi = self.read(bus, ptr);
-    }
-
-    fn bcs_relative(status: &Status) -> bool {
-        status.carry()
-    }
-
-    fn bcc_relative(status: &Status) -> bool {
-        !status.carry()
-    }
-
-    fn beq_relative(status: &Status) -> bool {
-        status.zero()
-    }
-
-    fn bne_relative(status: &Status) -> bool {
-        !status.zero()
-    }
-
-    fn bvs_relative(status: &Status) -> bool {
-        status.overflow()
-    }
-
-    fn bvc_relative(status: &Status) -> bool {
-        !status.overflow()
-    }
-
-    fn bmi_relative(status: &Status) -> bool {
-        status.negative()
-    }
-
-    fn bpl_relative(status: &Status) -> bool {
-        !status.negative()
-    }
-
-    fn inx(reg: &mut Register) {
-        reg.x = reg.x.wrapping_add(1);
-        Self::update_nz(&mut reg.p, reg.x);
-    }
-
-    fn iny(reg: &mut Register) {
-        reg.y = reg.y.wrapping_add(1);
-        Self::update_nz(&mut reg.p, reg.y);
-    }
-
-    fn dex(reg: &mut Register) {
-        reg.x = reg.x.wrapping_sub(1);
-        Self::update_nz(&mut reg.p, reg.x);
-    }
-
-    fn dey(reg: &mut Register) {
-        reg.y = reg.y.wrapping_sub(1);
-        Self::update_nz(&mut reg.p, reg.y);
-    }
-
-    fn sec(reg: &mut Register) {
-        reg.p.set_carry(true);
-    }
-
-    fn sed(reg: &mut Register) {
-        reg.p.set_decimal(true);
-    }
-
-    fn sei(reg: &mut Register) {
-        reg.p.set_interrupt(true);
-    }
-
-    fn clc(reg: &mut Register) {
-        reg.p.set_carry(false);
-    }
-
-    fn cld(reg: &mut Register) {
-        reg.p.set_decimal(false);
-    }
-
-    fn cli(reg: &mut Register) {
-        reg.p.set_interrupt(false);
-    }
-
-    fn clv(reg: &mut Register) {
-        reg.p.set_overflow(false);
-    }
-
-    fn tax(reg: &mut Register) {
-        reg.x = reg.a;
-        Self::update_nz(&mut reg.p, reg.x);
-    }
-
-    fn tay(reg: &mut Register) {
-        reg.y = reg.a;
-        Self::update_nz(&mut reg.p, reg.y);
-    }
-
-    fn txa(reg: &mut Register) {
-        reg.a = reg.x;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn tya(reg: &mut Register) {
-        reg.a = reg.y;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn tsx(reg: &mut Register) {
-        reg.x = reg.sp.into();
-        Self::update_nz(&mut reg.p, reg.x);
-    }
-
-    fn txs(reg: &mut Register) {
-        reg.sp = reg.x.into();
-    }
-
-    fn nop(_reg: &mut Register, _m: u8) {}
-
-    fn adc(reg: &mut Register, m: u8) {
-        Self::_adc(reg, m);
-    }
-
-    fn sbc(reg: &mut Register, m: u8) {
-        Self::_adc(reg, !m);
-    }
-
-    fn and(reg: &mut Register, m: u8) {
-        reg.a &= m;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn ora(reg: &mut Register, m: u8) {
-        reg.a |= m;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn eor(reg: &mut Register, m: u8) {
-        reg.a ^= m;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn bit(reg: &mut Register, m: u8) {
-        reg.p.set_negative(m & 0x80 != 0);
-        reg.p.set_overflow(m & 0x40 != 0);
-        reg.p.set_zero(reg.a & m == 0);
-    }
-
-    fn cmp(reg: &mut Register, m: u8) {
-        Self::_cmp(&mut reg.p, reg.a, m);
-    }
-
-    fn cpx(reg: &mut Register, m: u8) {
-        Self::_cmp(&mut reg.p, reg.x, m);
-    }
-
-    fn cpy(reg: &mut Register, m: u8) {
-        Self::_cmp(&mut reg.p, reg.y, m);
-    }
-
-    fn lda(reg: &mut Register, m: u8) {
-        reg.a = m;
-        Self::update_nz(&mut reg.p, reg.a);
-    }
-
-    fn ldx(reg: &mut Register, m: u8) {
-        reg.x = m;
-        Self::update_nz(&mut reg.p, reg.x);
-    }
-
-    fn ldy(reg: &mut Register, m: u8) {
-        reg.y = m;
-        Self::update_nz(&mut reg.p, reg.y);
-    }
-
-    fn lax(reg: &mut Register, m: u8) {
-        Self::lda(reg, m);
-        Self::ldx(reg, m);
-    }
-
-    fn las(reg: &mut Register, m: u8) {
-        let res = u8::from(reg.sp) & m;
-        reg.a = res;
-        reg.x = res;
-        reg.sp = res.into();
-        Self::update_nz(&mut reg.p, res);
-    }
-
-    fn alr(reg: &mut Register, m: u8) {
-        Self::and(reg, m);
-        let mut tmp_a = reg.a;
-        Self::lsr(reg, &mut tmp_a);
-        reg.a = tmp_a;
-    }
-
-    fn arr(reg: &mut Register, m: u8) {
-        Self::and(reg, m);
-        let mut tmp_a = reg.a;
-        Self::ror(reg, &mut tmp_a);
-        reg.a = tmp_a;
-
-        let spec_bit = (reg.a ^ (reg.a << 1)) & 0x40;
-        reg.p.set_overflow(spec_bit != 0);
-        reg.p.set_carry(reg.a & 0x40 != 0);
-    }
-
-    fn anc(reg: &mut Register, m: u8) {
-        Self::and(reg, m);
-        reg.p.set_carry(reg.a & 0x80 != 0);
-    }
-
-    fn axs(reg: &mut Register, m: u8) {
-        let ax = reg.a & reg.x;
-        let (res, borrow) = ax.overflowing_sub(m);
-        reg.x = res;
-        reg.p.set_carry(!borrow);
-        Self::update_nz(&mut reg.p, res);
-    }
-
-    fn asl(reg: &mut Register, m: &mut u8) {
-        reg.p.set_carry(*m & 0x80 != 0);
-        *m <<= 1;
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn lsr(reg: &mut Register, m: &mut u8) {
-        reg.p.set_carry(*m & 0x01 != 0);
-        *m >>= 1;
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn rol(reg: &mut Register, m: &mut u8) {
-        let old_c = reg.p.carry();
-        reg.p.set_carry(*m & 0x80 != 0);
-        *m = (*m << 1) | if old_c { 0x01 } else { 0 };
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn ror(reg: &mut Register, m: &mut u8) {
-        let old_c = reg.p.carry();
-        reg.p.set_carry(*m & 0x01 != 0);
-        *m = (*m >> 1) | if old_c { 0x80 } else { 0 };
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn inc(reg: &mut Register, m: &mut u8) {
-        *m = m.wrapping_add(1);
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn dec(reg: &mut Register, m: &mut u8) {
-        *m = m.wrapping_sub(1);
-        Self::update_nz(&mut reg.p, *m);
-    }
-
-    fn dcp(reg: &mut Register, m: &mut u8) {
-        Self::dec(reg, m);
-        Self::cmp(reg, *m);
-    }
-
-    fn isb(reg: &mut Register, m: &mut u8) {
-        Self::inc(reg, m);
-        Self::sbc(reg, *m);
-    }
-
-    fn rra(reg: &mut Register, m: &mut u8) {
-        Self::ror(reg, m);
-        Self::adc(reg, *m);
-    }
-
-    fn rla(reg: &mut Register, m: &mut u8) {
-        Self::rol(reg, m);
-        Self::and(reg, *m);
-    }
-
-    fn slo(reg: &mut Register, m: &mut u8) {
-        Self::asl(reg, m);
-        Self::ora(reg, *m);
-    }
-
-    fn sre(reg: &mut Register, m: &mut u8) {
-        Self::lsr(reg, m);
-        Self::eor(reg, *m);
-    }
-
-    fn sta(reg: &Register) -> u8 {
-        reg.a
-    }
-
-    fn stx(reg: &Register) -> u8 {
-        reg.x
-    }
-
-    fn sty(reg: &Register) -> u8 {
-        reg.y
-    }
-
-    fn sax(reg: &Register) -> u8 {
-        reg.a & reg.x
+        self.reg.p.set_carry(!borrow);
+        self.update_nz(res);
+    }
+
+    fn exec_unique(&mut self, bus: &mut NesBus, mnem: Unique, addr: Addressing) {
+        match (mnem, addr) {
+            (Unique::JAM, Addressing::Undefined) => {
+                // TODO: destroyed read
+                self.read_at_pc(bus);
+                self.is_jammed = true;
+            }
+
+            // TODO: Interrupt vector hijack
+            (Unique::BRK, Addressing::Implied) => {
+                self.fetch(bus);
+                self.push(bus, self.reg.pc.hi);
+                self.push(bus, self.reg.pc.lo);
+                self.push(bus, self.reg.p.as_byte(true));
+                self.reg.pc.lo = self.read(bus, BRK_VECTOR);
+                self.reg.p.set_interrupt(true);
+                self.reg.pc.hi = self.read(bus, BRK_VECTOR.wrapping_add(1));
+            }
+
+            (Unique::RTI, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.read_at_sp(bus);
+                self.reg.p = Status::from(self.pop(bus));
+                self.reg.pc.lo = self.pop(bus);
+                self.reg.pc.hi = self.pop(bus);
+            }
+
+            (Unique::RTS, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.read_at_sp(bus);
+                self.reg.pc.lo = self.pop(bus);
+                self.reg.pc.hi = self.pop(bus);
+                self.advance_pc();
+            }
+
+            (Unique::PHA, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.push(bus, self.reg.a);
+            }
+
+            (Unique::PHP, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.push(bus, self.reg.p.as_byte(false));
+            }
+
+            (Unique::PLA, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.read_at_sp(bus);
+                self.reg.a = self.pop(bus);
+            }
+
+            (Unique::PLP, Addressing::Implied) => {
+                self.read_at_pc(bus);
+                self.read_at_sp(bus);
+                self.reg.p = Status::from(self.pop(bus));
+            }
+
+            (Unique::JSR, Addressing::Absolute) => {
+                let lo = self.fetch(bus);
+                self.read_at_sp(bus);
+                self.push(bus, self.reg.pc.hi);
+                self.push(bus, self.reg.pc.lo);
+                self.reg.pc.hi = self.fetch(bus);
+                self.reg.pc.lo = lo;
+            }
+
+            (Unique::JMP, Addressing::Absolute) => {
+                let lo = self.fetch(bus);
+                self.reg.pc.hi = self.fetch(bus);
+                self.reg.pc.lo = lo;
+            }
+
+            (Unique::JMP, Addressing::AbsoluteInd) => {
+                let mut ptr = Word::from(0);
+                ptr.lo = self.fetch(bus);
+                ptr.hi = self.fetch(bus);
+                self.reg.pc.lo = self.read(bus, ptr);
+                ptr.lo = ptr.lo.wrapping_add(1);
+                self.reg.pc.hi = self.read(bus, ptr);
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn operate_branch(&mut self, mnem: Branch) -> bool {
+        match mnem {
+            Branch::BCS => self.reg.p.carry(),
+            Branch::BCC => !self.reg.p.carry(),
+            Branch::BEQ => self.reg.p.zero(),
+            Branch::BNE => self.reg.p.zero(),
+            Branch::BVS => self.reg.p.overflow(),
+            Branch::BVC => !self.reg.p.overflow(),
+            Branch::BMI => self.reg.p.negative(),
+            Branch::BPL => !self.reg.p.negative(),
+        }
+    }
+
+    fn operate_short(&mut self, mnem: Short) {
+        match mnem {
+            Short::INX => {
+                self.reg.x = self.reg.x.wrapping_add(1);
+                self.update_nz(self.reg.x);
+            }
+
+            Short::INY => {
+                self.reg.y = self.reg.y.wrapping_add(1);
+                self.update_nz(self.reg.y);
+            }
+
+            Short::DEX => {
+                self.reg.x = self.reg.x.wrapping_sub(1);
+                self.update_nz(self.reg.x);
+            }
+
+            Short::DEY => {
+                self.reg.y = self.reg.y.wrapping_sub(1);
+                self.update_nz(self.reg.y);
+            }
+
+            Short::SEC => self.reg.p.set_carry(true),
+            Short::SED => self.reg.p.set_decimal(true),
+            Short::SEI => self.reg.p.set_interrupt(true),
+
+            Short::CLC => self.reg.p.set_carry(false),
+            Short::CLD => self.reg.p.set_decimal(false),
+            Short::CLI => self.reg.p.set_interrupt(false),
+            Short::CLV => self.reg.p.set_overflow(false),
+
+            Short::TAX => {
+                self.reg.x = self.reg.a;
+                self.update_nz(self.reg.x);
+            }
+
+            Short::TAY => {
+                self.reg.y = self.reg.a;
+                self.update_nz(self.reg.y);
+            }
+
+            Short::TXA => {
+                self.reg.a = self.reg.x;
+                self.update_nz(self.reg.a);
+            }
+
+            Short::TYA => {
+                self.reg.a = self.reg.y;
+                self.update_nz(self.reg.a);
+            }
+
+            Short::TSX => {
+                self.reg.x = self.reg.sp.into();
+                self.update_nz(self.reg.x);
+            }
+
+            Short::TXS => self.reg.sp = self.reg.x.into(),
+        };
+    }
+
+    fn operate_read(&mut self, m: u8, mnem: Read) {
+        match mnem {
+            Read::NOP => (),
+
+            Read::ADC => self.add_with_carry(m),
+            Read::SBC => self.add_with_carry(!m),
+
+            Read::AND => {
+                self.reg.a &= m;
+                self.update_nz(self.reg.a);
+            }
+
+            Read::ORA => {
+                self.reg.a |= m;
+                self.update_nz(self.reg.a);
+            }
+
+            Read::EOR => {
+                self.reg.a ^= m;
+                self.update_nz(self.reg.a);
+            }
+
+            Read::BIT => {
+                self.reg.p.set_negative(m & 0x80 != 0);
+                self.reg.p.set_overflow(m & 0x40 != 0);
+                self.reg.p.set_zero(self.reg.a & m == 0);
+            }
+
+            Read::CMP => self.compare(self.reg.a, m),
+            Read::CPX => self.compare(self.reg.x, m),
+            Read::CPY => self.compare(self.reg.y, m),
+
+            Read::LDA => {
+                self.reg.a = m;
+                self.update_nz(self.reg.a);
+            }
+
+            Read::LDX => {
+                self.reg.x = m;
+                self.update_nz(self.reg.x);
+            }
+
+            Read::LDY => {
+                self.reg.y = m;
+                self.update_nz(self.reg.y);
+            }
+
+            Read::LAX => (),
+            Read::LXA => (),
+            Read::LAS => (),
+            Read::ALR => (),
+            Read::ARR => (),
+            Read::ANC => (),
+            Read::AXS => (),
+            Read::ANE => (),
+        }
+    }
+
+    fn operate_modify(&mut self, m: &mut u8, mnem: Modify) {
+        match mnem {
+            Modify::ASL => {
+                self.reg.p.set_carry(*m & 0x80 != 0);
+                *m <<= 1;
+                self.update_nz(*m);
+            }
+
+            Modify::LSR => {
+                self.reg.p.set_carry(*m & 0x01 != 0);
+                *m >>= 1;
+                self.update_nz(*m);
+            }
+
+            Modify::ROL => {
+                let old_c = self.reg.p.carry();
+                self.reg.p.set_carry(*m & 0x80 != 0);
+                *m = (*m << 1) | if old_c { 0x01 } else { 0 };
+                self.update_nz(*m);
+            }
+
+            Modify::ROR => {
+                let old_c = self.reg.p.carry();
+                self.reg.p.set_carry(*m & 0x01 != 0);
+                *m = (*m >> 1) | if old_c { 0x80 } else { 0 };
+                self.update_nz(*m);
+            }
+
+            Modify::INC => {
+                *m = m.wrapping_add(1);
+                self.update_nz(*m);
+            }
+
+            Modify::DEC => {
+                *m = m.wrapping_sub(1);
+                self.update_nz(*m);
+            }
+
+            Modify::DCP => (),
+            Modify::ISB => (),
+            Modify::RRA => (),
+            Modify::RLA => (),
+            Modify::SLO => (),
+            Modify::SRE => (),
+        }
+    }
+
+    // TODO: enable to override ADH
+    fn operate_write(&mut self, mnem: Write, _addr: &mut Word) -> u8 {
+        match mnem {
+            Write::STA => self.reg.a,
+            Write::STX => self.reg.x,
+            Write::STY => self.reg.y,
+
+            Write::SAX => 0x00,
+            Write::SBX => 0x00,
+            Write::SHS => 0x00,
+            Write::SHA => 0x00,
+            Write::SHX => 0x00,
+            Write::SHY => 0x00,
+        }
     }
 }
