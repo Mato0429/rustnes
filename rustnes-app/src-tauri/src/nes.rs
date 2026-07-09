@@ -27,13 +27,13 @@ macro_rules! nesbus {
 
 #[derive(Debug, Clone)]
 pub struct Nes {
-    nesrom: NesRom,
-    cpu_openbus: u8,
-    cpu: Cpu,
-    wram: [u8; WRAM_SIZE],
-    ppu_openbus: u8,
-    ppu: Ppu,
-    vram: [u8; VRAM_SIZE],
+    pub nesrom: NesRom,
+    pub cpu_openbus: u8,
+    pub cpu: Cpu,
+    pub wram: [u8; WRAM_SIZE],
+    pub ppu_openbus: u8,
+    pub ppu: Ppu,
+    pub vram: [u8; VRAM_SIZE],
 }
 
 impl Nes {

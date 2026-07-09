@@ -8,11 +8,11 @@ pub struct Ppu {}
 
 impl Ppu {
     pub fn new() -> Self {
-        todo!()
+        Self {}
     }
 
     pub fn read_register(&mut self, addr: u8) -> BusData {
-        todo!()
+        BusData::new(0, 0x00)
     }
 
     pub fn write_register(&mut self, addr: u8, data: u8) {}

@@ -39,7 +39,7 @@ pub trait MapperLogic {
 }
 
 #[enum_dispatch(MapperLogic)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Mapper {
     Disconnected,
     Nrom,

@@ -1,11 +1,10 @@
+mod instr;
 mod opcode;
+mod regs;
 
 use crate::nes::{bus::CpuBus, NesBus};
-use modular_bitfield::prelude::*;
 use opcode::*;
-
-const ZEROPAGE: u8 = 0x00;
-const STACKPAGE: u8 = 0x01;
+use regs::{Register, StackPtr, Status, Word};
 
 const RESET_VECTOR: u16 = 0xFFFC;
 const BRK_VECTOR: u16 = 0xFFFE;
@@ -28,101 +27,6 @@ macro_rules! cpubus {
     };
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Word {
-    pub lo: u8,
-    pub hi: u8,
-}
-
-impl Word {
-    fn from_le_bytes(bytes: [u8; 2]) -> Self {
-        Self::from(u16::from_le_bytes(bytes))
-    }
-
-    fn from_zeropage(lo: u8) -> Self {
-        Self::from_le_bytes([lo, ZEROPAGE])
-    }
-}
-
-impl From<Word> for u16 {
-    fn from(value: Word) -> Self {
-        Self::from_le_bytes([value.lo, value.hi])
-    }
-}
-
-impl From<u16> for Word {
-    fn from(value: u16) -> Self {
-        let [lo, hi] = value.to_le_bytes();
-        Self { lo, hi }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StackPtr {
-    pub inner: u8,
-}
-
-impl From<StackPtr> for u8 {
-    fn from(value: StackPtr) -> Self {
-        value.inner
-    }
-}
-
-impl From<u8> for StackPtr {
-    fn from(value: u8) -> Self {
-        Self { inner: value }
-    }
-}
-
-impl From<StackPtr> for u16 {
-    fn from(value: StackPtr) -> Self {
-        Self::from_le_bytes([value.into(), STACKPAGE])
-    }
-}
-
-#[bitfield]
-#[derive(Debug, Clone, Copy)]
-pub struct Status {
-    pub carry: bool,
-    pub zero: bool,
-    pub interrupt: bool,
-    pub decimal: bool,
-    #[skip] // Break (bit4) depends
-    __: B2, // Reserved(bit5) is always 1
-    pub overflow: bool,
-    pub negative: bool,
-}
-
-impl Status {
-    const BREAK_MASK: u8 = 0b0001_0000;
-    const RESERVED_MASK: u8 = 0b0010_0000;
-
-    fn as_byte(&self, b_flag: bool) -> u8 {
-        let with_r = self.into_bytes()[0] | Self::RESERVED_MASK;
-        if b_flag {
-            with_r | Self::BREAK_MASK
-        } else {
-            with_r
-        }
-    }
-}
-
-impl From<u8> for Status {
-    fn from(value: u8) -> Self {
-        Status::from_bytes([value])
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Register {
-    pub a: u8,
-    pub x: u8,
-    pub y: u8,
-    pub p: Status,
-    pub sp: StackPtr,
-    pub pc: Word,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemAddrKind {
     PageSafe,
@@ -132,8 +36,8 @@ pub enum MemAddrKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu {
-    is_jammed: bool,
-    reg: Register,
+    pub is_jammed: bool,
+    pub reg: Register,
 }
 
 impl Cpu {
@@ -168,6 +72,10 @@ impl Cpu {
 
     pub fn step(&mut self, bus: &mut NesBus) {
         // TODO: Handle interrupt here
+        let opcode_byte = self.fetch(bus);
+        let opcode = OPCODE_TABLE[opcode_byte as usize];
+        print!("{:?} {:?} ", opcode.mnemonic, opcode.addressing);
+        self.exec_opcode(bus, opcode.mnemonic, opcode.addressing);
     }
 
     fn read(&mut self, bus: &mut NesBus, addr: impl Into<u16>) -> u8 {
@@ -216,6 +124,7 @@ impl Cpu {
 
     fn exec_opcode(&mut self, bus: &mut NesBus, mnem: Mnemonic, addr: Addressing) {
         match (mnem, addr) {
+            (Mnemonic::Read(Read::NOP), Addressing::Implied) => (),
             (Mnemonic::Unique(unique), _) => self.exec_unique(bus, unique, addr),
             (Mnemonic::Branch(branch), Addressing::Relative) => self.exec_relative(bus, branch),
             (Mnemonic::Short(short), Addressing::Implied) => self.exec_short(bus, short),

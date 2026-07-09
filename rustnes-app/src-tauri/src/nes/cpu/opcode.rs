@@ -249,7 +249,7 @@ pub const OPCODE_TABLE: [Opcode; 256] = [
     /* 0xB3 */ Opcode{ mnemonic: LAX, addressing: IndYIdxed, is_official: false },
     /* 0xB4 */ Opcode{ mnemonic: LDY, addressing: ZeropageX, is_official: false },
     /* 0xB5 */ Opcode{ mnemonic: LDA, addressing: ZeropageX, is_official: true },
-    /* 0xB6 */ Opcode{ mnemonic: LDX, addressing: ZeropageX, is_official: true },
+    /* 0xB6 */ Opcode{ mnemonic: LDX, addressing: ZeropageY, is_official: true },
     /* 0xB7 */ Opcode{ mnemonic: LAX, addressing: ZeropageX, is_official: false },
     /* 0xB8 */ Opcode{ mnemonic: CLV, addressing: Implied, is_official: true },
     /* 0xB9 */ Opcode{ mnemonic: LDA, addressing: AbsoluteY, is_official: true },
