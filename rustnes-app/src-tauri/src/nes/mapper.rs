@@ -1,10 +1,7 @@
-mod disconnected;
 mod nrom;
 
-use disconnected::Disconnected;
 use nrom::Nrom;
 
-use crate::nes::bus::BusData;
 use enum_dispatch::enum_dispatch;
 
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +16,7 @@ pub enum Mirroring {
 #[derive(Debug, Clone, Copy)]
 pub enum PpuReadHook {
     InternalVram(u16),
-    ExternalVram(BusData),
+    ExternalVram(u8),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +29,7 @@ pub enum PpuWriteHook {
 pub trait MapperLogic {
     fn irq_active(&self) -> bool;
     fn cpu_step(&mut self);
-    fn cpu_read(&mut self, addr: u16) -> BusData;
+    fn cpu_read(&mut self, addr: u16) -> u8;
     fn cpu_write(&mut self, addr: u16, data: u8);
     fn ppu_read(&mut self, addr: u16) -> PpuReadHook;
     fn ppu_write(&mut self, addr: u16, data: u8) -> PpuWriteHook;
@@ -41,14 +38,7 @@ pub trait MapperLogic {
 #[enum_dispatch(MapperLogic)]
 #[derive(Debug, Clone)]
 pub enum Mapper {
-    Disconnected,
     Nrom,
-}
-
-impl Mapper {
-    pub fn disconnected() -> Self {
-        Self::Disconnected(Disconnected)
-    }
 }
 
 #[derive(Debug, Clone)]

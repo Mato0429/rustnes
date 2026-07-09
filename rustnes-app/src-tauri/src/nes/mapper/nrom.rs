@@ -1,5 +1,5 @@
 use super::{MapperLogic, PpuReadHook, PpuWriteHook};
-use crate::nes::{bus::BusData, mapper::MapperCtx};
+use crate::nes::mapper::MapperCtx;
 
 #[derive(Debug, Clone)]
 pub struct Nrom {
@@ -25,13 +25,13 @@ impl MapperLogic for Nrom {
 
     fn cpu_step(&mut self) {}
 
-    fn cpu_read(&mut self, addr: u16) -> BusData {
+    fn cpu_read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..0x4020 => unreachable!(),
-            0x4020..0x6000 => BusData::new(0, 0x00),
-            0x6000..0x8000 => BusData::new(self.prgram[(addr - 0x6000) as usize], 0xFF),
-            0x8000..0xC000 => BusData::new(self.prgrom[(addr - 0x8000) as usize], 0xFF),
-            0xC000..=u16::MAX => BusData::new(self.prgrom[(addr - 0xC000) as usize], 0xFF),
+            0x4020..0x6000 => 0x00,
+            0x6000..0x8000 => self.prgram[(addr - 0x6000) as usize],
+            0x8000..0xC000 => self.prgrom[(addr - 0x8000) as usize],
+            0xC000..=u16::MAX => self.prgrom[(addr - 0xC000) as usize],
         }
     }
 
@@ -45,7 +45,7 @@ impl MapperLogic for Nrom {
     }
 
     fn ppu_read(&mut self, _addr: u16) -> PpuReadHook {
-        PpuReadHook::ExternalVram(BusData::new(0, 0x00))
+        PpuReadHook::ExternalVram(0x00)
     }
 
     fn ppu_write(&mut self, _addr: u16, _data: u8) -> PpuWriteHook {
