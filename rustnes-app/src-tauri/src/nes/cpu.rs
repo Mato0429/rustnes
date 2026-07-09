@@ -123,6 +123,13 @@ pub struct Register {
     pub pc: Word,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemAddrKind {
+    PageSafe,
+    NotCrossed,
+    RequireFix,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu {
     is_jammed: bool,
@@ -212,6 +219,11 @@ impl Cpu {
             (Mnemonic::Unique(unique), _) => self.exec_unique(bus, unique, addr),
             (Mnemonic::Branch(branch), Addressing::Relative) => self.exec_relative(bus, branch),
             (Mnemonic::Short(short), Addressing::Implied) => self.exec_short(bus, short),
+            (Mnemonic::Modify(modify), Addressing::Accumulator) => self.exec_accum(bus, modify),
+            (Mnemonic::Read(read), Addressing::Immediate) => self.exec_immediate(bus, read),
+            (Mnemonic::Read(read), _) => self.exec_mem_read(bus, read, addr),
+            (Mnemonic::Modify(modify), _) => self.exec_mem_modify(bus, modify, addr),
+            (Mnemonic::Write(write), _) => self.exec_mem_write(bus, write, addr),
             _ => todo!(),
         }
     }
@@ -229,7 +241,7 @@ impl Cpu {
         self.reg.pc.lo = idxed_lo;
 
         if !crossed {
-            // TODO: Clear polled hw interrupts to ignore
+            // TODO: Clear polled irq interrupt to ignore
             return;
         }
 
@@ -243,63 +255,132 @@ impl Cpu {
         self.operate_short(mnem);
     }
 
-    fn zeropage(&mut self, bus: &mut NesBus) -> Word {
-        Word::from_zeropage(self.fetch(bus))
+    fn exec_accum(&mut self, bus: &mut NesBus, mnem: Modify) {
+        self.read_at_pc(bus);
+        let mut tmp_a = self.reg.a;
+        self.operate_modify(mnem, &mut tmp_a);
+        self.reg.a = tmp_a;
     }
 
-    fn zeropage_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> Word {
+    fn exec_immediate(&mut self, bus: &mut NesBus, mnem: Read) {
+        let m = self.fetch(bus);
+        self.operate_read(mnem, m);
+    }
+
+    fn exec_mem_read(&mut self, bus: &mut NesBus, mnem: Read, addr: Addressing) {
+        let (unchecked_addr, kind) = self.resolve_mem_addr(bus, addr);
+        let mem_addr = if kind == MemAddrKind::RequireFix {
+            self.read(bus, unchecked_addr); // Dummy read to fix ADH
+            Word::from_le_bytes([unchecked_addr.lo, unchecked_addr.hi.wrapping_add(1)])
+        } else {
+            unchecked_addr
+        };
+
+        let m = self.read(bus, mem_addr);
+        self.operate_read(mnem, m);
+    }
+
+    fn exec_mem_modify(&mut self, bus: &mut NesBus, mnem: Modify, addr: Addressing) {
+        let (unchecked_addr, kind) = self.resolve_mem_addr(bus, addr);
+        let mem_addr = if kind == MemAddrKind::PageSafe {
+            unchecked_addr
+        } else {
+            self.read(bus, unchecked_addr); // Dummy read to guarantee ADH
+            if kind == MemAddrKind::RequireFix {
+                Word::from_le_bytes([unchecked_addr.lo, unchecked_addr.hi.wrapping_add(1)])
+            } else {
+                unchecked_addr
+            }
+        };
+
+        let mut m = self.read(bus, mem_addr);
+        self.write(bus, mem_addr, m); // Dummy write
+        self.operate_modify(mnem, &mut m); // Operate on the value
+        self.write(bus, mem_addr, m); // Write the value back
+    }
+
+    fn exec_mem_write(&mut self, bus: &mut NesBus, mnem: Write, addr: Addressing) {
+        let (unchecked_addr, kind) = self.resolve_mem_addr(bus, addr);
+        let mut mem_addr = if kind == MemAddrKind::PageSafe {
+            unchecked_addr
+        } else {
+            self.read(bus, unchecked_addr); // Dummy read to guarantee ADH
+            if kind == MemAddrKind::RequireFix {
+                Word::from_le_bytes([unchecked_addr.lo, unchecked_addr.hi.wrapping_add(1)])
+            } else {
+                unchecked_addr
+            }
+        };
+
+        let m = self.operate_write(mnem, &mut mem_addr);
+        self.write(bus, mem_addr, m); // Write the value
+    }
+
+    fn resolve_mem_addr(&mut self, bus: &mut NesBus, addr: Addressing) -> (Word, MemAddrKind) {
+        match addr {
+            Addressing::Zeropage => self.zeropage(bus),
+            Addressing::ZeropageX => self.zeropage_indexed(bus, self.reg.x),
+            Addressing::ZeropageY => self.zeropage_indexed(bus, self.reg.y),
+            Addressing::Absolute => self.absolute(bus),
+            Addressing::AbsoluteX => self.absolute_indexed(bus, self.reg.x),
+            Addressing::AbsoluteY => self.absolute_indexed(bus, self.reg.y),
+            Addressing::XIdxedInd => self.x_indexed_indirect(bus),
+            Addressing::IndYIdxed => self.indirect_y_indexed(bus),
+            _ => panic!(),
+        }
+    }
+
+    fn zeropage(&mut self, bus: &mut NesBus) -> (Word, MemAddrKind) {
+        (Word::from_zeropage(self.fetch(bus)), MemAddrKind::PageSafe)
+    }
+
+    fn zeropage_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> (Word, MemAddrKind) {
         let lo = self.fetch(bus);
         self.read(bus, Word::from_zeropage(lo));
         let lo = lo.wrapping_add(indexer);
-        Word::from_zeropage(lo)
+        (Word::from_zeropage(lo), MemAddrKind::PageSafe)
     }
 
-    fn zeropage_x(&mut self, bus: &mut NesBus) -> Word {
-        self.zeropage_indexed(bus, self.reg.x)
-    }
-
-    fn zeropage_y(&mut self, bus: &mut NesBus) -> Word {
-        self.zeropage_indexed(bus, self.reg.y)
-    }
-
-    fn absolute(&mut self, bus: &mut NesBus) -> Word {
+    fn absolute(&mut self, bus: &mut NesBus) -> (Word, MemAddrKind) {
         let lo = self.fetch(bus);
         let hi = self.fetch(bus);
-        Word::from_le_bytes([lo, hi])
+        (Word::from_le_bytes([lo, hi]), MemAddrKind::PageSafe)
     }
 
-    fn absolute_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> (Word, bool) {
+    fn absolute_indexed(&mut self, bus: &mut NesBus, indexer: u8) -> (Word, MemAddrKind) {
         let lo = self.fetch(bus);
         let hi = self.fetch(bus);
         let (lo, is_crossed) = lo.overflowing_add(indexer);
         let addr = Word::from_le_bytes([lo, hi]);
-        (addr, is_crossed)
+
+        if is_crossed {
+            (addr, MemAddrKind::RequireFix)
+        } else {
+            (addr, MemAddrKind::NotCrossed)
+        }
     }
 
-    fn absolute_x(&mut self, bus: &mut NesBus) -> (Word, bool) {
-        self.absolute_indexed(bus, self.reg.x)
-    }
-
-    fn absolute_y(&mut self, bus: &mut NesBus) -> (Word, bool) {
-        self.absolute_indexed(bus, self.reg.y)
-    }
-
-    fn x_indexed_indirect(&mut self, bus: &mut NesBus) -> Word {
+    fn x_indexed_indirect(&mut self, bus: &mut NesBus) -> (Word, MemAddrKind) {
         let ptr = self.fetch(bus);
         self.read(bus, Word::from_zeropage(ptr));
         let ptr = ptr.wrapping_add(self.reg.x);
         let lo = self.read(bus, Word::from_zeropage(ptr));
         let hi = self.read(bus, Word::from_zeropage(ptr.wrapping_add(1)));
-        Word::from_le_bytes([lo, hi])
+        (Word::from_le_bytes([lo, hi]), MemAddrKind::PageSafe)
     }
 
-    fn indirect_y_indexed(&mut self, bus: &mut NesBus) -> (Word, bool) {
+    fn indirect_y_indexed(&mut self, bus: &mut NesBus) -> (Word, MemAddrKind) {
         let ptr = self.fetch(bus);
         let lo = self.read(bus, Word::from_zeropage(ptr));
         let hi = self.read(bus, Word::from_zeropage(ptr.wrapping_add(1)));
         let (lo, is_crossed) = lo.overflowing_add(self.reg.y);
         let addr = Word::from_le_bytes([lo, hi]);
-        (addr, is_crossed)
+
+        if is_crossed {
+            (addr, MemAddrKind::RequireFix)
+        } else {
+            (addr, MemAddrKind::NotCrossed)
+        }
     }
 }
 
@@ -377,6 +458,7 @@ impl Cpu {
                 self.read_at_pc(bus);
                 self.read_at_sp(bus);
                 self.reg.a = self.pop(bus);
+                self.update_nz(self.reg.a);
             }
 
             (Unique::PLP, Addressing::Implied) => {
@@ -417,7 +499,7 @@ impl Cpu {
             Branch::BCS => self.reg.p.carry(),
             Branch::BCC => !self.reg.p.carry(),
             Branch::BEQ => self.reg.p.zero(),
-            Branch::BNE => self.reg.p.zero(),
+            Branch::BNE => !self.reg.p.zero(),
             Branch::BVS => self.reg.p.overflow(),
             Branch::BVC => !self.reg.p.overflow(),
             Branch::BMI => self.reg.p.negative(),
@@ -485,7 +567,7 @@ impl Cpu {
         };
     }
 
-    fn operate_read(&mut self, m: u8, mnem: Read) {
+    fn operate_read(&mut self, mnem: Read, m: u8) {
         match mnem {
             Read::NOP => (),
 
@@ -543,7 +625,7 @@ impl Cpu {
         }
     }
 
-    fn operate_modify(&mut self, m: &mut u8, mnem: Modify) {
+    fn operate_modify(&mut self, mnem: Modify, m: &mut u8) {
         match mnem {
             Modify::ASL => {
                 self.reg.p.set_carry(*m & 0x80 != 0);
@@ -590,7 +672,6 @@ impl Cpu {
         }
     }
 
-    // TODO: enable to override ADH
     fn operate_write(&mut self, mnem: Write, _addr: &mut Word) -> u8 {
         match mnem {
             Write::STA => self.reg.a,
