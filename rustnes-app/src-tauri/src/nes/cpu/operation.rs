@@ -3,10 +3,15 @@ use super::{Bus, Cpu, Status, BRK_VECTOR};
 const LXA_CONST: u8 = 0xEE;
 const ANE_CONST: u8 = 0xEE;
 
-use Operation::*;
+pub type Short = fn(&mut Cpu);
+pub type Branch = fn(&Cpu) -> bool;
+pub type Read = fn(&mut Cpu, u8);
+pub type Modify = fn(&mut Cpu, &mut u8);
+pub type Write = fn(&Cpu) -> u8;
+pub type WrongWrite = fn(&mut Cpu, u8) -> u8;
 
-#[derive(Clone, Copy, Debug)]
-pub enum UniqueOp {
+#[derive(Debug, Clone, Copy)]
+pub enum Unique {
     JamUndefined,
     BrkImplied,
     RtiImplied,
@@ -18,36 +23,18 @@ pub enum UniqueOp {
     JsrAbsolute,
     JmpAbsolute,
     JmpIndirect,
+    NopImplied,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum MemAddr {
-    Zeropage,
-    ZeropageX,
-    ZeropageY,
-    Absolute,
-    AbsoluteX,
-    AbsoluteY,
-    XIdxedInd,
-    IndYIdxed,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum MemOp {
-    Read(fn(&mut Cpu, u8)),
-    Modify(fn(&mut Cpu, &mut u8)),
-    Write(fn(&mut Cpu) -> u8),
-    UnstableWrite(fn(&mut Cpu, u8) -> u8),
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Operation {
-    UniqueOp(UniqueOp),
-    Implied(fn(&mut Cpu)),
-    Relative(fn(&mut Cpu) -> bool),
-    Accumulator(fn(&mut Cpu, &mut u8)),
-    Immediate(fn(&mut Cpu, u8)),
-    MemOp(MemOp, MemAddr),
+    Unique(Unique),
+    Short(Short),
+    Branch(Branch),
+    Read(Read),
+    Modify(Modify),
+    Write(Write),
+    WrongWrite(WrongWrite),
 }
 
 impl Cpu {
@@ -98,9 +85,10 @@ impl Cpu {
     pub(super) fn brk_implied<B: Bus>(&mut self, bus: &mut B) {
         self.fetch(bus); // discard the padding byte
         let [pcl, pch] = self.reg.pc.to_le_bytes();
-        self.push(bus, pcl);
         self.push(bus, pch);
+        self.push(bus, pcl);
         self.push(bus, self.reg.p.as_byte(true));
+        self.reg.p.insert(Status::I);
         let lo = self.read(bus, BRK_VECTOR);
         let hi = self.read(bus, BRK_VECTOR.wrapping_add(1));
         self.reg.pc = u16::from_le_bytes([lo, hi]);
@@ -157,14 +145,12 @@ impl Cpu {
         self.push(bus, old_lo);
         let new_hi = self.read(bus, self.reg.pc);
         self.reg.pc = u16::from_le_bytes([new_lo, new_hi]);
-        self.read_at_pc(bus);
     }
 
     pub(super) fn jmp_absolute<B: Bus>(&mut self, bus: &mut B) {
         let new_lo = self.fetch(bus);
         let new_hi = self.read(bus, self.reg.pc);
         self.reg.pc = u16::from_le_bytes([new_lo, new_hi]);
-        self.read_at_pc(bus);
     }
 
     pub(super) fn jmp_indirect<B: Bus>(&mut self, bus: &mut B) {
@@ -174,108 +160,112 @@ impl Cpu {
         let hi = self.read(bus, u16::from_le_bytes([ptr_lo.wrapping_add(1), ptr_hi]));
         self.reg.pc = u16::from_le_bytes([lo, hi]);
     }
+
+    pub(super) fn nop_implied<B: Bus>(&mut self, bus: &mut B) {
+        self.read_at_pc(bus);
+    }
 }
 
 impl Cpu {
-    pub(super) fn inx_implied(&mut self) {
+    pub(super) fn inx(&mut self) {
         self.set_x(self.reg.x.wrapping_add(1));
     }
 
-    pub(super) fn iny_implied(&mut self) {
+    pub(super) fn iny(&mut self) {
         self.set_y(self.reg.y.wrapping_add(1));
     }
 
-    pub(super) fn dex_implied(&mut self) {
+    pub(super) fn dex(&mut self) {
         self.set_x(self.reg.x.wrapping_sub(1));
     }
 
-    pub(super) fn dey_implied(&mut self) {
+    pub(super) fn dey(&mut self) {
         self.set_y(self.reg.y.wrapping_sub(1));
     }
 
-    pub(super) fn clc_implied(&mut self) {
+    pub(super) fn clc(&mut self) {
         self.reg.p.remove(Status::C);
     }
 
-    pub(super) fn cld_implied(&mut self) {
+    pub(super) fn cld(&mut self) {
         self.reg.p.remove(Status::D);
     }
 
-    pub(super) fn cli_implied(&mut self) {
+    pub(super) fn cli(&mut self) {
         self.reg.p.remove(Status::I);
     }
 
-    pub(super) fn clv_implied(&mut self) {
+    pub(super) fn clv(&mut self) {
         self.reg.p.remove(Status::V);
     }
 
-    pub(super) fn sec_implied(&mut self) {
+    pub(super) fn sec(&mut self) {
         self.reg.p.insert(Status::C);
     }
 
-    pub(super) fn sed_implied(&mut self) {
+    pub(super) fn sed(&mut self) {
         self.reg.p.insert(Status::D);
     }
 
-    pub(super) fn sei_implied(&mut self) {
+    pub(super) fn sei(&mut self) {
         self.reg.p.insert(Status::I);
     }
 
-    pub(super) fn tax_implied(&mut self) {
+    pub(super) fn tax(&mut self) {
         self.set_x(self.reg.a);
     }
 
-    pub(super) fn tay_implied(&mut self) {
+    pub(super) fn tay(&mut self) {
         self.set_y(self.reg.a);
     }
 
-    pub(super) fn txa_implied(&mut self) {
+    pub(super) fn txa(&mut self) {
         self.set_a(self.reg.x);
     }
 
-    pub(super) fn tya_implied(&mut self) {
+    pub(super) fn tya(&mut self) {
         self.set_a(self.reg.y);
     }
 
-    pub(super) fn tsx_implied(&mut self) {
+    pub(super) fn tsx(&mut self) {
         self.set_x(self.reg.sp);
     }
 
-    pub(super) fn txs_implied(&mut self) {
+    pub(super) fn txs(&mut self) {
         self.reg.sp = self.reg.x;
     }
 }
 
 impl Cpu {
-    pub(super) fn bcs_relative(&mut self) -> bool {
+    pub(super) fn bcs(&self) -> bool {
         self.reg.p.contains(Status::C)
     }
 
-    pub(super) fn bcc_relative(&mut self) -> bool {
+    pub(super) fn bcc(&self) -> bool {
         !self.reg.p.contains(Status::C)
     }
 
-    pub(super) fn beq_relative(&mut self) -> bool {
+    pub(super) fn beq(&self) -> bool {
         self.reg.p.contains(Status::Z)
     }
 
-    pub(super) fn bne_relative(&mut self) -> bool {
+    pub(super) fn bne(&self) -> bool {
         !self.reg.p.contains(Status::Z)
     }
 
-    pub(super) fn bvs_relative(&mut self) -> bool {
+    pub(super) fn bvs(&self) -> bool {
         self.reg.p.contains(Status::V)
     }
 
-    pub(super) fn bvc_relative(&mut self) -> bool {
+    pub(super) fn bvc(&self) -> bool {
         !self.reg.p.contains(Status::V)
     }
 
-    pub(super) fn bmi_relative(&mut self) -> bool {
+    pub(super) fn bmi(&self) -> bool {
         self.reg.p.contains(Status::N)
     }
 
-    pub(super) fn bpl_relative(&mut self) -> bool {
+    pub(super) fn bpl(&self) -> bool {
         !self.reg.p.contains(Status::N)
     }
 }
@@ -367,6 +357,10 @@ impl Cpu {
         self.and(m);
         let mut tmp_a = self.reg.a;
         self.ror(&mut tmp_a);
+
+        let spec_bit = (tmp_a ^ (tmp_a << 1)) & 0x40;
+        self.reg.p.set(Status::C, tmp_a & 0x40 != 0);
+        self.reg.p.set(Status::V, spec_bit != 0);
         self.reg.a = tmp_a;
     }
 
@@ -448,19 +442,19 @@ impl Cpu {
 }
 
 impl Cpu {
-    pub(super) fn sta(&mut self) -> u8 {
+    pub(super) fn sta(&self) -> u8 {
         self.reg.a
     }
 
-    pub(super) fn stx(&mut self) -> u8 {
+    pub(super) fn stx(&self) -> u8 {
         self.reg.x
     }
 
-    pub(super) fn sty(&mut self) -> u8 {
+    pub(super) fn sty(&self) -> u8 {
         self.reg.y
     }
 
-    pub(super) fn sax(&mut self) -> u8 {
+    pub(super) fn sax(&self) -> u8 {
         self.reg.a & self.reg.x
     }
 }

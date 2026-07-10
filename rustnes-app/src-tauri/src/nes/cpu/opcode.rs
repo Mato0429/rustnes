@@ -1,64 +1,119 @@
-macro_rules! define_ops {
-    ($(($ops:ident) => ($($op:ident),*)),*) => {
-        #[derive(Clone, Copy)]
-        pub enum Mnemonic{
-            $($ops($ops)),*
-        }
+use super::operation::{Operation, Unique};
+use super::Cpu;
 
-        $(
-            #[derive(Clone, Copy)]
-            #[allow(clippy::upper_case_acronyms)]
-            pub enum $ops{
-                $($op),*
-            }
+const BRK: Operation = Unique(Unique::BrkImplied);
+const RTI: Operation = Unique(Unique::RtiImplied);
+const RTS: Operation = Unique(Unique::RtsImplied);
+const PHA: Operation = Unique(Unique::PhaImplied);
+const PHP: Operation = Unique(Unique::PhpImplied);
+const PLA: Operation = Unique(Unique::PlaImplied);
+const PLP: Operation = Unique(Unique::PlpImplied);
+const JSR: Operation = Unique(Unique::JsrAbsolute);
+const JMP_ABS: Operation = Unique(Unique::JmpAbsolute);
+const JMP_IND: Operation = Unique(Unique::JmpIndirect);
+const JAM: Operation = Unique(Unique::JamUndefined);
+const NOP_IMP: Operation = Unique(Unique::NopImplied);
 
-            $(
-                const $op: Mnemonic = Mnemonic::$ops($ops::$op);
-            )*
-        )*
-    };
-}
+const INX: Operation = Short(Cpu::inx);
+const INY: Operation = Short(Cpu::iny);
+const DEX: Operation = Short(Cpu::dex);
+const DEY: Operation = Short(Cpu::dey);
+const CLC: Operation = Short(Cpu::clc);
+const CLI: Operation = Short(Cpu::cli);
+const CLD: Operation = Short(Cpu::cld);
+const CLV: Operation = Short(Cpu::clv);
+const SEC: Operation = Short(Cpu::sec);
+const SEI: Operation = Short(Cpu::sei);
+const SED: Operation = Short(Cpu::sed);
+const TXA: Operation = Short(Cpu::txa);
+const TYA: Operation = Short(Cpu::tya);
+const TAX: Operation = Short(Cpu::tax);
+const TAY: Operation = Short(Cpu::tay);
+const TXS: Operation = Short(Cpu::txs);
+const TSX: Operation = Short(Cpu::tsx);
 
-define_ops! {
-    (Unique) => (JAM, BRK, RTI, RTS, PHA, PHP, PLA, PLP, JMP, JSR),
-    (Short) => (INX, INY, DEX, DEY, CLC, CLD, CLI, CLV, SEC, SED, SEI, TAX, TAY, TXA, TYA, TSX, TXS),
-    (Branch) => (BCS, BCC, BNE, BEQ, BVS, BVC, BMI, BPL),
-    (Read) => (NOP, ADC, SBC, AND, ORA, EOR, BIT, CMP, CPX, CPY, LDA, LDX, LDY, LAX, LXA, LAS, ALR, ARR, ANC, AXS, ANE),
-    (Modify) => (ASL, LSR, ROL, ROR, INC, DEC, DCP, ISB, RRA, RLA, SLO, SRE),
-    (Write) => (STA, STX, STY, SAX),
-    (UnstableWrite) => (SHA, SHX, SHY, SHS)
-}
+const BCS: Operation = Branch(Cpu::bcs);
+const BCC: Operation = Branch(Cpu::bcc);
+const BEQ: Operation = Branch(Cpu::beq);
+const BNE: Operation = Branch(Cpu::bne);
+const BVS: Operation = Branch(Cpu::bvs);
+const BVC: Operation = Branch(Cpu::bvc);
+const BPL: Operation = Branch(Cpu::bpl);
+const BMI: Operation = Branch(Cpu::bmi);
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum Addressing {
-    Implied,
+const NOP: Operation = Read(Cpu::nop);
+const ADC: Operation = Read(Cpu::adc);
+const SBC: Operation = Read(Cpu::sbc);
+const AND: Operation = Read(Cpu::and);
+const ORA: Operation = Read(Cpu::ora);
+const EOR: Operation = Read(Cpu::eor);
+const BIT: Operation = Read(Cpu::bit);
+const CMP: Operation = Read(Cpu::cmp);
+const CPX: Operation = Read(Cpu::cpx);
+const CPY: Operation = Read(Cpu::cpy);
+const LDA: Operation = Read(Cpu::lda);
+const LDX: Operation = Read(Cpu::ldx);
+const LDY: Operation = Read(Cpu::ldy);
+const LAX: Operation = Read(Cpu::lax);
+const LXA: Operation = Read(Cpu::lxa);
+const LAS: Operation = Read(Cpu::las);
+const ANC: Operation = Read(Cpu::anc);
+const ALR: Operation = Read(Cpu::alr);
+const ARR: Operation = Read(Cpu::arr);
+const ANE: Operation = Read(Cpu::ane);
+const AXS: Operation = Read(Cpu::axs);
+
+const ASL: Operation = Modify(Cpu::asl);
+const LSR: Operation = Modify(Cpu::lsr);
+const ROL: Operation = Modify(Cpu::rol);
+const ROR: Operation = Modify(Cpu::ror);
+const INC: Operation = Modify(Cpu::inc);
+const DEC: Operation = Modify(Cpu::dec);
+const DCP: Operation = Modify(Cpu::dcp);
+const ISB: Operation = Modify(Cpu::isb);
+const RLA: Operation = Modify(Cpu::rla);
+const RRA: Operation = Modify(Cpu::rra);
+const SLO: Operation = Modify(Cpu::slo);
+const SRE: Operation = Modify(Cpu::sre);
+
+const STA: Operation = Write(Cpu::sta);
+const STX: Operation = Write(Cpu::stx);
+const STY: Operation = Write(Cpu::sty);
+const SAX: Operation = Write(Cpu::sax);
+
+const SHA: Operation = WrongWrite(Cpu::sha);
+const SHX: Operation = WrongWrite(Cpu::shx);
+const SHY: Operation = WrongWrite(Cpu::shy);
+const SHS: Operation = WrongWrite(Cpu::shs);
+
+#[derive(Clone, Copy, Debug)]
+pub enum Targetter {
+    Depend,
     Accumulator,
     Immediate,
-    ZeroPage,
-    ZeroPageX,
-    ZeroPageY,
+    Zeropage,
+    ZeropageX,
+    ZeropageY,
     Absolute,
     AbsoluteX,
     AbsoluteY,
-    Relative,
     XIdxedInd,
     IndYIdxed,
-    Indirect,
-    Undefined,
 }
 
-use Addressing::*;
+use Operation::*;
+use Targetter::*;
 
-pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
-    /* 0x00 */ (BRK, Implied),
+pub const OPCODE_TABLE: [(Operation, Targetter); 256] = [
+    /* 0x00 */ (BRK, Depend),
     /* 0x01 */ (ORA, XIdxedInd),
-    /* 0x02 */ (JAM, Undefined),
+    /* 0x02 */ (JAM, Depend),
     /* 0x03 */ (SLO, XIdxedInd),
-    /* 0x04 */ (NOP, ZeroPage),
-    /* 0x05 */ (ORA, ZeroPage),
-    /* 0x06 */ (ASL, ZeroPage),
-    /* 0x07 */ (SLO, ZeroPage),
-    /* 0x08 */ (PHP, Implied),
+    /* 0x04 */ (NOP, Zeropage),
+    /* 0x05 */ (ORA, Zeropage),
+    /* 0x06 */ (ASL, Zeropage),
+    /* 0x07 */ (SLO, Zeropage),
+    /* 0x08 */ (PHP, Depend),
     /* 0x09 */ (ORA, Immediate),
     /* 0x0A */ (ASL, Accumulator),
     /* 0x0B */ (ANC, Immediate),
@@ -66,31 +121,31 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x0D */ (ORA, Absolute),
     /* 0x0E */ (ASL, Absolute),
     /* 0x0F */ (SLO, Absolute),
-    /* 0x10 */ (BPL, Relative),
+    /* 0x10 */ (BPL, Depend),
     /* 0x11 */ (ORA, IndYIdxed),
-    /* 0x12 */ (JAM, Undefined),
+    /* 0x12 */ (JAM, Depend),
     /* 0x13 */ (SLO, IndYIdxed),
-    /* 0x14 */ (NOP, ZeroPageX),
-    /* 0x15 */ (ORA, ZeroPageX),
-    /* 0x16 */ (ASL, ZeroPageX),
-    /* 0x17 */ (SLO, ZeroPageX),
-    /* 0x18 */ (CLC, Implied),
+    /* 0x14 */ (NOP, ZeropageX),
+    /* 0x15 */ (ORA, ZeropageX),
+    /* 0x16 */ (ASL, ZeropageX),
+    /* 0x17 */ (SLO, ZeropageX),
+    /* 0x18 */ (CLC, Depend),
     /* 0x19 */ (ORA, AbsoluteY),
-    /* 0x1A */ (NOP, Implied),
+    /* 0x1A */ (NOP_IMP, Depend),
     /* 0x1B */ (SLO, AbsoluteY),
     /* 0x1C */ (NOP, AbsoluteX),
     /* 0x1D */ (ORA, AbsoluteX),
     /* 0x1E */ (ASL, AbsoluteX),
     /* 0x1F */ (SLO, AbsoluteX),
-    /* 0x20 */ (JSR, Absolute),
+    /* 0x20 */ (JSR, Depend),
     /* 0x21 */ (AND, XIdxedInd),
-    /* 0x22 */ (JAM, Undefined),
+    /* 0x22 */ (JAM, Depend),
     /* 0x23 */ (RLA, XIdxedInd),
-    /* 0x24 */ (BIT, ZeroPage),
-    /* 0x25 */ (AND, ZeroPage),
-    /* 0x26 */ (ROL, ZeroPage),
-    /* 0x27 */ (RLA, ZeroPage),
-    /* 0x28 */ (PLP, Implied),
+    /* 0x24 */ (BIT, Zeropage),
+    /* 0x25 */ (AND, Zeropage),
+    /* 0x26 */ (ROL, Zeropage),
+    /* 0x27 */ (RLA, Zeropage),
+    /* 0x28 */ (PLP, Depend),
     /* 0x29 */ (AND, Immediate),
     /* 0x2A */ (ROL, Accumulator),
     /* 0x2B */ (ANC, Immediate),
@@ -98,81 +153,81 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x2D */ (AND, Absolute),
     /* 0x2E */ (ROL, Absolute),
     /* 0x2F */ (RLA, Absolute),
-    /* 0x30 */ (BMI, Relative),
+    /* 0x30 */ (BMI, Depend),
     /* 0x31 */ (AND, IndYIdxed),
-    /* 0x32 */ (JAM, Undefined),
+    /* 0x32 */ (JAM, Depend),
     /* 0x33 */ (RLA, IndYIdxed),
-    /* 0x34 */ (NOP, ZeroPageX),
-    /* 0x35 */ (AND, ZeroPageX),
-    /* 0x36 */ (ROL, ZeroPageX),
-    /* 0x37 */ (RLA, ZeroPageX),
-    /* 0x38 */ (SEC, Implied),
+    /* 0x34 */ (NOP, ZeropageX),
+    /* 0x35 */ (AND, ZeropageX),
+    /* 0x36 */ (ROL, ZeropageX),
+    /* 0x37 */ (RLA, ZeropageX),
+    /* 0x38 */ (SEC, Depend),
     /* 0x39 */ (AND, AbsoluteY),
-    /* 0x3A */ (NOP, Implied),
+    /* 0x3A */ (NOP_IMP, Depend),
     /* 0x3B */ (RLA, AbsoluteY),
     /* 0x3C */ (NOP, AbsoluteX),
     /* 0x3D */ (AND, AbsoluteX),
     /* 0x3E */ (ROL, AbsoluteX),
     /* 0x3F */ (RLA, AbsoluteX),
-    /* 0x40 */ (RTI, Implied),
+    /* 0x40 */ (RTI, Depend),
     /* 0x41 */ (EOR, XIdxedInd),
-    /* 0x42 */ (JAM, Undefined),
+    /* 0x42 */ (JAM, Depend),
     /* 0x43 */ (SRE, XIdxedInd),
-    /* 0x44 */ (NOP, ZeroPage),
-    /* 0x45 */ (EOR, ZeroPage),
-    /* 0x46 */ (LSR, ZeroPage),
-    /* 0x47 */ (SRE, ZeroPage),
-    /* 0x48 */ (PHA, Implied),
+    /* 0x44 */ (NOP, Zeropage),
+    /* 0x45 */ (EOR, Zeropage),
+    /* 0x46 */ (LSR, Zeropage),
+    /* 0x47 */ (SRE, Zeropage),
+    /* 0x48 */ (PHA, Depend),
     /* 0x49 */ (EOR, Immediate),
     /* 0x4A */ (LSR, Accumulator),
     /* 0x4B */ (ALR, Immediate),
-    /* 0x4C */ (JMP, Absolute),
+    /* 0x4C */ (JMP_ABS, Depend),
     /* 0x4D */ (EOR, Absolute),
     /* 0x4E */ (LSR, Absolute),
     /* 0x4F */ (SRE, Absolute),
-    /* 0x50 */ (BVC, Relative),
+    /* 0x50 */ (BVC, Depend),
     /* 0x51 */ (EOR, IndYIdxed),
-    /* 0x52 */ (JAM, Undefined),
+    /* 0x52 */ (JAM, Depend),
     /* 0x53 */ (SRE, IndYIdxed),
-    /* 0x54 */ (NOP, ZeroPageX),
-    /* 0x55 */ (EOR, ZeroPageX),
-    /* 0x56 */ (LSR, ZeroPageX),
-    /* 0x57 */ (SRE, ZeroPageX),
-    /* 0x58 */ (CLI, Implied),
+    /* 0x54 */ (NOP, ZeropageX),
+    /* 0x55 */ (EOR, ZeropageX),
+    /* 0x56 */ (LSR, ZeropageX),
+    /* 0x57 */ (SRE, ZeropageX),
+    /* 0x58 */ (CLI, Depend),
     /* 0x59 */ (EOR, AbsoluteY),
-    /* 0x5A */ (NOP, Implied),
+    /* 0x5A */ (NOP_IMP, Depend),
     /* 0x5B */ (SRE, AbsoluteY),
     /* 0x5C */ (NOP, AbsoluteX),
     /* 0x5D */ (EOR, AbsoluteX),
     /* 0x5E */ (LSR, AbsoluteX),
     /* 0x5F */ (SRE, AbsoluteX),
-    /* 0x60 */ (RTS, Implied),
+    /* 0x60 */ (RTS, Depend),
     /* 0x61 */ (ADC, XIdxedInd),
-    /* 0x62 */ (JAM, Undefined),
+    /* 0x62 */ (JAM, Depend),
     /* 0x63 */ (RRA, XIdxedInd),
-    /* 0x64 */ (NOP, ZeroPage),
-    /* 0x65 */ (ADC, ZeroPage),
-    /* 0x66 */ (ROR, ZeroPage),
-    /* 0x67 */ (RRA, ZeroPage),
-    /* 0x68 */ (PLA, Implied),
+    /* 0x64 */ (NOP, Zeropage),
+    /* 0x65 */ (ADC, Zeropage),
+    /* 0x66 */ (ROR, Zeropage),
+    /* 0x67 */ (RRA, Zeropage),
+    /* 0x68 */ (PLA, Depend),
     /* 0x69 */ (ADC, Immediate),
     /* 0x6A */ (ROR, Accumulator),
     /* 0x6B */ (ARR, Immediate),
-    /* 0x6C */ (JMP, Indirect),
+    /* 0x6C */ (JMP_IND, Depend),
     /* 0x6D */ (ADC, Absolute),
     /* 0x6E */ (ROR, Absolute),
     /* 0x6F */ (RRA, Absolute),
-    /* 0x70 */ (BVS, Relative),
+    /* 0x70 */ (BVS, Depend),
     /* 0x71 */ (ADC, IndYIdxed),
-    /* 0x72 */ (JAM, Undefined),
+    /* 0x72 */ (JAM, Depend),
     /* 0x73 */ (RRA, IndYIdxed),
-    /* 0x74 */ (NOP, ZeroPageX),
-    /* 0x75 */ (ADC, ZeroPageX),
-    /* 0x76 */ (ROR, ZeroPageX),
-    /* 0x77 */ (RRA, ZeroPageX),
-    /* 0x78 */ (SEI, Implied),
+    /* 0x74 */ (NOP, ZeropageX),
+    /* 0x75 */ (ADC, ZeropageX),
+    /* 0x76 */ (ROR, ZeropageX),
+    /* 0x77 */ (RRA, ZeropageX),
+    /* 0x78 */ (SEI, Depend),
     /* 0x79 */ (ADC, AbsoluteY),
-    /* 0x7A */ (NOP, Implied),
+    /* 0x7A */ (NOP_IMP, Depend),
     /* 0x7B */ (RRA, AbsoluteY),
     /* 0x7C */ (NOP, AbsoluteX),
     /* 0x7D */ (ADC, AbsoluteX),
@@ -182,29 +237,29 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x81 */ (STA, XIdxedInd),
     /* 0x82 */ (NOP, Immediate),
     /* 0x83 */ (SAX, XIdxedInd),
-    /* 0x84 */ (STY, ZeroPage),
-    /* 0x85 */ (STA, ZeroPage),
-    /* 0x86 */ (STX, ZeroPage),
-    /* 0x87 */ (SAX, ZeroPage),
-    /* 0x88 */ (DEY, Implied),
+    /* 0x84 */ (STY, Zeropage),
+    /* 0x85 */ (STA, Zeropage),
+    /* 0x86 */ (STX, Zeropage),
+    /* 0x87 */ (SAX, Zeropage),
+    /* 0x88 */ (DEY, Depend),
     /* 0x89 */ (NOP, Immediate),
-    /* 0x8A */ (TXA, Implied),
+    /* 0x8A */ (TXA, Depend),
     /* 0x8B */ (ANE, Immediate),
     /* 0x8C */ (STY, Absolute),
     /* 0x8D */ (STA, Absolute),
     /* 0x8E */ (STX, Absolute),
     /* 0x8F */ (SAX, Absolute),
-    /* 0x90 */ (BCC, Relative),
+    /* 0x90 */ (BCC, Depend),
     /* 0x91 */ (STA, IndYIdxed),
-    /* 0x92 */ (JAM, Undefined),
+    /* 0x92 */ (JAM, Depend),
     /* 0x93 */ (SHA, IndYIdxed),
-    /* 0x94 */ (STY, ZeroPageX),
-    /* 0x95 */ (STA, ZeroPageX),
-    /* 0x96 */ (STX, ZeroPageY),
-    /* 0x97 */ (SAX, ZeroPageY),
-    /* 0x98 */ (TYA, Implied),
+    /* 0x94 */ (STY, ZeropageX),
+    /* 0x95 */ (STA, ZeropageX),
+    /* 0x96 */ (STX, ZeropageY),
+    /* 0x97 */ (SAX, ZeropageY),
+    /* 0x98 */ (TYA, Depend),
     /* 0x99 */ (STA, AbsoluteY),
-    /* 0x9A */ (TXS, Implied),
+    /* 0x9A */ (TXS, Depend),
     /* 0x9B */ (SHS, AbsoluteY),
     /* 0x9C */ (SHY, AbsoluteX),
     /* 0x9D */ (STA, AbsoluteX),
@@ -214,29 +269,29 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xA1 */ (LDA, XIdxedInd),
     /* 0xA2 */ (LDX, Immediate),
     /* 0xA3 */ (LAX, XIdxedInd),
-    /* 0xA4 */ (LDY, ZeroPage),
-    /* 0xA5 */ (LDA, ZeroPage),
-    /* 0xA6 */ (LDX, ZeroPage),
-    /* 0xA7 */ (LAX, ZeroPage),
-    /* 0xA8 */ (TAY, Implied),
+    /* 0xA4 */ (LDY, Zeropage),
+    /* 0xA5 */ (LDA, Zeropage),
+    /* 0xA6 */ (LDX, Zeropage),
+    /* 0xA7 */ (LAX, Zeropage),
+    /* 0xA8 */ (TAY, Depend),
     /* 0xA9 */ (LDA, Immediate),
-    /* 0xAA */ (TAX, Implied),
+    /* 0xAA */ (TAX, Depend),
     /* 0xAB */ (LXA, Immediate),
     /* 0xAC */ (LDY, Absolute),
     /* 0xAD */ (LDA, Absolute),
     /* 0xAE */ (LDX, Absolute),
     /* 0xAF */ (LAX, Absolute),
-    /* 0xB0 */ (BCS, Relative),
+    /* 0xB0 */ (BCS, Depend),
     /* 0xB1 */ (LDA, IndYIdxed),
-    /* 0xB2 */ (JAM, Undefined),
+    /* 0xB2 */ (JAM, Depend),
     /* 0xB3 */ (LAX, IndYIdxed),
-    /* 0xB4 */ (LDY, ZeroPageX),
-    /* 0xB5 */ (LDA, ZeroPageX),
-    /* 0xB6 */ (LDX, ZeroPageY),
-    /* 0xB7 */ (LAX, ZeroPageY),
-    /* 0xB8 */ (CLV, Implied),
+    /* 0xB4 */ (LDY, ZeropageX),
+    /* 0xB5 */ (LDA, ZeropageX),
+    /* 0xB6 */ (LDX, ZeropageY),
+    /* 0xB7 */ (LAX, ZeropageY),
+    /* 0xB8 */ (CLV, Depend),
     /* 0xB9 */ (LDA, AbsoluteY),
-    /* 0xBA */ (TSX, Implied),
+    /* 0xBA */ (TSX, Depend),
     /* 0xBB */ (LAS, AbsoluteY),
     /* 0xBC */ (LDY, AbsoluteX),
     /* 0xBD */ (LDA, AbsoluteX),
@@ -246,29 +301,29 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xC1 */ (CMP, XIdxedInd),
     /* 0xC2 */ (NOP, Immediate),
     /* 0xC3 */ (DCP, XIdxedInd),
-    /* 0xC4 */ (CPY, ZeroPage),
-    /* 0xC5 */ (CMP, ZeroPage),
-    /* 0xC6 */ (DEC, ZeroPage),
-    /* 0xC7 */ (DCP, ZeroPage),
-    /* 0xC8 */ (INY, Implied),
+    /* 0xC4 */ (CPY, Zeropage),
+    /* 0xC5 */ (CMP, Zeropage),
+    /* 0xC6 */ (DEC, Zeropage),
+    /* 0xC7 */ (DCP, Zeropage),
+    /* 0xC8 */ (INY, Depend),
     /* 0xC9 */ (CMP, Immediate),
-    /* 0xCA */ (DEX, Implied),
+    /* 0xCA */ (DEX, Depend),
     /* 0xCB */ (AXS, Immediate),
     /* 0xCC */ (CPY, Absolute),
     /* 0xCD */ (CMP, Absolute),
     /* 0xCE */ (DEC, Absolute),
     /* 0xCF */ (DCP, Absolute),
-    /* 0xD0 */ (BNE, Relative),
+    /* 0xD0 */ (BNE, Depend),
     /* 0xD1 */ (CMP, IndYIdxed),
-    /* 0xD2 */ (JAM, Undefined),
+    /* 0xD2 */ (JAM, Depend),
     /* 0xD3 */ (DCP, IndYIdxed),
-    /* 0xD4 */ (NOP, ZeroPageX),
-    /* 0xD5 */ (CMP, ZeroPageX),
-    /* 0xD6 */ (DEC, ZeroPageX),
-    /* 0xD7 */ (DCP, ZeroPageX),
-    /* 0xD8 */ (CLD, Implied),
+    /* 0xD4 */ (NOP, ZeropageX),
+    /* 0xD5 */ (CMP, ZeropageX),
+    /* 0xD6 */ (DEC, ZeropageX),
+    /* 0xD7 */ (DCP, ZeropageX),
+    /* 0xD8 */ (CLD, Depend),
     /* 0xD9 */ (CMP, AbsoluteY),
-    /* 0xDA */ (NOP, Implied),
+    /* 0xDA */ (NOP_IMP, Depend),
     /* 0xDB */ (DCP, AbsoluteY),
     /* 0xDC */ (NOP, AbsoluteX),
     /* 0xDD */ (CMP, AbsoluteX),
@@ -278,29 +333,29 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xE1 */ (SBC, XIdxedInd),
     /* 0xE2 */ (NOP, Immediate),
     /* 0xE3 */ (ISB, XIdxedInd),
-    /* 0xE4 */ (CPX, ZeroPage),
-    /* 0xE5 */ (SBC, ZeroPage),
-    /* 0xE6 */ (INC, ZeroPage),
-    /* 0xE7 */ (ISB, ZeroPage),
-    /* 0xE8 */ (INX, Implied),
+    /* 0xE4 */ (CPX, Zeropage),
+    /* 0xE5 */ (SBC, Zeropage),
+    /* 0xE6 */ (INC, Zeropage),
+    /* 0xE7 */ (ISB, Zeropage),
+    /* 0xE8 */ (INX, Depend),
     /* 0xE9 */ (SBC, Immediate),
-    /* 0xEA */ (NOP, Implied),
+    /* 0xEA */ (NOP_IMP, Depend),
     /* 0xEB */ (SBC, Immediate),
     /* 0xEC */ (CPX, Absolute),
     /* 0xED */ (SBC, Absolute),
     /* 0xEE */ (INC, Absolute),
     /* 0xEF */ (ISB, Absolute),
-    /* 0xF0 */ (BEQ, Relative),
+    /* 0xF0 */ (BEQ, Depend),
     /* 0xF1 */ (SBC, IndYIdxed),
-    /* 0xF2 */ (JAM, Undefined),
+    /* 0xF2 */ (JAM, Depend),
     /* 0xF3 */ (ISB, IndYIdxed),
-    /* 0xF4 */ (NOP, ZeroPageX),
-    /* 0xF5 */ (SBC, ZeroPageX),
-    /* 0xF6 */ (INC, ZeroPageX),
-    /* 0xF7 */ (ISB, ZeroPageX),
-    /* 0xF8 */ (SED, Implied),
+    /* 0xF4 */ (NOP, ZeropageX),
+    /* 0xF5 */ (SBC, ZeropageX),
+    /* 0xF6 */ (INC, ZeropageX),
+    /* 0xF7 */ (ISB, ZeropageX),
+    /* 0xF8 */ (SED, Depend),
     /* 0xF9 */ (SBC, AbsoluteY),
-    /* 0xFA */ (NOP, Implied),
+    /* 0xFA */ (NOP_IMP, Depend),
     /* 0xFB */ (ISB, AbsoluteY),
     /* 0xFC */ (NOP, AbsoluteX),
     /* 0xFD */ (SBC, AbsoluteX),

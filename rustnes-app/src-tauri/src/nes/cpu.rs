@@ -73,7 +73,7 @@ impl Cpu {
     }
 
     fn stackpointer(&self) -> u16 {
-        u16::from_be_bytes([self.reg.sp, STACK_PAGE])
+        u16::from_le_bytes([self.reg.sp, STACK_PAGE])
     }
 
     fn consume_cycle(&mut self) {
