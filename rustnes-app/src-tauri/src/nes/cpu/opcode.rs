@@ -1,16 +1,35 @@
-#[rustfmt::skip]
-#[derive(PartialEq, Eq, Clone, Copy)]
-#[allow(clippy::upper_case_acronyms)]
-pub enum Mnemonic{
-    JAM, BRK, RTI, RTS, PHA, PHP, PLA, PLP, JMP, JSR,
-    INX, INY, DEX, DEY, CLC, CLD, CLI, CLV, SEC, SED, SEI, TAX, TAY, TSX, TXA, TYA, TXS,
-    BCC, BCS, BNE, BEQ, BVC, BVS, BPL, BMI,
-    NOP, ADC, SBC, AND, ORA, EOR, LDA, BIT, LDX, LDY, LAX, LXA, LAS, CMP, CPX, CPY, ALR, ARR, ANC, AXS, ANE,
-    ASL, LSR, ROL, ROR, INC, DEC, DCP, ISB, RRA, RLA, SLO, SRE,
-    STA, STY, SAX, STX, SHA, SHX, SHY, SHS,
+macro_rules! define_ops {
+    ($(($ops:ident) => ($($op:ident),*)),*) => {
+        #[derive(Clone, Copy)]
+        pub enum Mnemonic{
+            $($ops($ops)),*
+        }
+
+        $(
+            #[derive(Clone, Copy)]
+            #[allow(clippy::upper_case_acronyms)]
+            pub enum $ops{
+                $($op),*
+            }
+
+            $(
+                const $op: Mnemonic = Mnemonic::$ops($ops::$op);
+            )*
+        )*
+    };
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+define_ops! {
+    (Unique) => (JAM, BRK, RTI, RTS, PHA, PHP, PLA, PLP, JMP, JSR),
+    (Short) => (INX, INY, DEX, DEY, CLC, CLD, CLI, CLV, SEC, SED, SEI, TAX, TAY, TXA, TYA, TSX, TXS),
+    (Branch) => (BCS, BCC, BNE, BEQ, BVS, BVC, BMI, BPL),
+    (Read) => (NOP, ADC, SBC, AND, ORA, EOR, BIT, CMP, CPX, CPY, LDA, LDX, LDY, LAX, LXA, LAS, ALR, ARR, ANC, AXS, ANE),
+    (Modify) => (ASL, LSR, ROL, ROR, INC, DEC, DCP, ISB, RRA, RLA, SLO, SRE),
+    (Write) => (STA, STX, STY, SAX),
+    (UnstableWrite) => (SHA, SHX, SHY, SHS)
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Addressing {
     Implied,
     Accumulator,
@@ -25,15 +44,15 @@ pub enum Addressing {
     XIdxedInd,
     IndYIdxed,
     Indirect,
+    Undefined,
 }
 
 use Addressing::*;
-use Mnemonic::*;
 
 pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x00 */ (BRK, Implied),
     /* 0x01 */ (ORA, XIdxedInd),
-    /* 0x02 */ (JAM, Implied),
+    /* 0x02 */ (JAM, Undefined),
     /* 0x03 */ (SLO, XIdxedInd),
     /* 0x04 */ (NOP, ZeroPage),
     /* 0x05 */ (ORA, ZeroPage),
@@ -49,7 +68,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x0F */ (SLO, Absolute),
     /* 0x10 */ (BPL, Relative),
     /* 0x11 */ (ORA, IndYIdxed),
-    /* 0x12 */ (JAM, Implied),
+    /* 0x12 */ (JAM, Undefined),
     /* 0x13 */ (SLO, IndYIdxed),
     /* 0x14 */ (NOP, ZeroPageX),
     /* 0x15 */ (ORA, ZeroPageX),
@@ -65,7 +84,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x1F */ (SLO, AbsoluteX),
     /* 0x20 */ (JSR, Absolute),
     /* 0x21 */ (AND, XIdxedInd),
-    /* 0x22 */ (JAM, Implied),
+    /* 0x22 */ (JAM, Undefined),
     /* 0x23 */ (RLA, XIdxedInd),
     /* 0x24 */ (BIT, ZeroPage),
     /* 0x25 */ (AND, ZeroPage),
@@ -81,7 +100,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x2F */ (RLA, Absolute),
     /* 0x30 */ (BMI, Relative),
     /* 0x31 */ (AND, IndYIdxed),
-    /* 0x32 */ (JAM, Implied),
+    /* 0x32 */ (JAM, Undefined),
     /* 0x33 */ (RLA, IndYIdxed),
     /* 0x34 */ (NOP, ZeroPageX),
     /* 0x35 */ (AND, ZeroPageX),
@@ -97,7 +116,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x3F */ (RLA, AbsoluteX),
     /* 0x40 */ (RTI, Implied),
     /* 0x41 */ (EOR, XIdxedInd),
-    /* 0x42 */ (JAM, Implied),
+    /* 0x42 */ (JAM, Undefined),
     /* 0x43 */ (SRE, XIdxedInd),
     /* 0x44 */ (NOP, ZeroPage),
     /* 0x45 */ (EOR, ZeroPage),
@@ -113,7 +132,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x4F */ (SRE, Absolute),
     /* 0x50 */ (BVC, Relative),
     /* 0x51 */ (EOR, IndYIdxed),
-    /* 0x52 */ (JAM, Implied),
+    /* 0x52 */ (JAM, Undefined),
     /* 0x53 */ (SRE, IndYIdxed),
     /* 0x54 */ (NOP, ZeroPageX),
     /* 0x55 */ (EOR, ZeroPageX),
@@ -129,7 +148,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x5F */ (SRE, AbsoluteX),
     /* 0x60 */ (RTS, Implied),
     /* 0x61 */ (ADC, XIdxedInd),
-    /* 0x62 */ (JAM, Implied),
+    /* 0x62 */ (JAM, Undefined),
     /* 0x63 */ (RRA, XIdxedInd),
     /* 0x64 */ (NOP, ZeroPage),
     /* 0x65 */ (ADC, ZeroPage),
@@ -145,7 +164,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x6F */ (RRA, Absolute),
     /* 0x70 */ (BVS, Relative),
     /* 0x71 */ (ADC, IndYIdxed),
-    /* 0x72 */ (JAM, Implied),
+    /* 0x72 */ (JAM, Undefined),
     /* 0x73 */ (RRA, IndYIdxed),
     /* 0x74 */ (NOP, ZeroPageX),
     /* 0x75 */ (ADC, ZeroPageX),
@@ -177,7 +196,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0x8F */ (SAX, Absolute),
     /* 0x90 */ (BCC, Relative),
     /* 0x91 */ (STA, IndYIdxed),
-    /* 0x92 */ (JAM, Implied),
+    /* 0x92 */ (JAM, Undefined),
     /* 0x93 */ (SHA, IndYIdxed),
     /* 0x94 */ (STY, ZeroPageX),
     /* 0x95 */ (STA, ZeroPageX),
@@ -209,7 +228,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xAF */ (LAX, Absolute),
     /* 0xB0 */ (BCS, Relative),
     /* 0xB1 */ (LDA, IndYIdxed),
-    /* 0xB2 */ (JAM, Implied),
+    /* 0xB2 */ (JAM, Undefined),
     /* 0xB3 */ (LAX, IndYIdxed),
     /* 0xB4 */ (LDY, ZeroPageX),
     /* 0xB5 */ (LDA, ZeroPageX),
@@ -241,7 +260,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xCF */ (DCP, Absolute),
     /* 0xD0 */ (BNE, Relative),
     /* 0xD1 */ (CMP, IndYIdxed),
-    /* 0xD2 */ (JAM, Implied),
+    /* 0xD2 */ (JAM, Undefined),
     /* 0xD3 */ (DCP, IndYIdxed),
     /* 0xD4 */ (NOP, ZeroPageX),
     /* 0xD5 */ (CMP, ZeroPageX),
@@ -273,7 +292,7 @@ pub const OPCODE_TABLE: [(Mnemonic, Addressing); 256] = [
     /* 0xEF */ (ISB, Absolute),
     /* 0xF0 */ (BEQ, Relative),
     /* 0xF1 */ (SBC, IndYIdxed),
-    /* 0xF2 */ (JAM, Implied),
+    /* 0xF2 */ (JAM, Undefined),
     /* 0xF3 */ (ISB, IndYIdxed),
     /* 0xF4 */ (NOP, ZeroPageX),
     /* 0xF5 */ (SBC, ZeroPageX),

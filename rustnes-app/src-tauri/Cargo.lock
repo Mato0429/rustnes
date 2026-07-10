@@ -2781,6 +2781,7 @@ dependencies = [
 name = "rustnes-app"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.13.0",
  "enum_dispatch",
  "maplit",
  "modular-bitfield",

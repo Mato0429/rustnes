@@ -27,6 +27,8 @@ pub trait Bus {
 #[derive(Debug, Clone, Copy)]
 pub struct Cpu {
     pub is_jammed: bool,
+    pub total_cycle: u128,
+
     pub reg: Register,
 }
 
@@ -36,6 +38,8 @@ impl Cpu {
     pub fn new() -> Self {
         Self {
             is_jammed: false,
+            total_cycle: 0,
+
             reg: Register {
                 a: DEFAULT_A,
                 x: DEFAULT_X,
@@ -64,15 +68,28 @@ impl Cpu {
     pub fn step(&mut self, bus: &mut impl Bus) {
         // TODO: Handle interrupt here
         let opcode = self.fetch(bus);
-        let (mnemonic, addressing) = OPCODE_TABLE[opcode as usize];
+        let opcode = OPCODE_TABLE[opcode as usize];
+        self.exec_opcode(bus, opcode);
+    }
+
+    fn stackpointer(&self) -> u16 {
+        u16::from_be_bytes([self.reg.sp, STACK_PAGE])
+    }
+
+    fn consume_cycle(&mut self) {
+        self.total_cycle += 1;
     }
 
     fn read(&mut self, bus: &mut impl Bus, addr: u16) -> u8 {
-        // TODO: Handle dma like: fn process_dma(&mut self, last_addr: impl Into<u16>, page: u8)
+        self.consume_cycle();
+
+        // TODO: Activate dma like: fn process_dma(&mut self, last_addr: impl Into<u16>, page: u8)
         bus.read(addr)
     }
 
     fn write(&mut self, bus: &mut impl Bus, addr: u16, data: u8) {
+        self.consume_cycle();
+
         // TODO: Hook dma here
         bus.write(addr, data);
     }
@@ -82,7 +99,7 @@ impl Cpu {
     }
 
     fn read_at_sp(&mut self, bus: &mut impl Bus) {
-        self.read(bus, u16::from_be_bytes([self.reg.sp, STACK_PAGE]));
+        self.read(bus, self.stackpointer());
     }
 
     fn fetch(&mut self, bus: &mut impl Bus) -> u8 {
@@ -92,12 +109,12 @@ impl Cpu {
     }
 
     fn push(&mut self, bus: &mut impl Bus, data: u8) {
-        self.write(bus, u16::from_be_bytes([self.reg.sp, STACK_PAGE]), data);
+        self.write(bus, self.stackpointer(), data);
         self.reg.sp = self.reg.sp.wrapping_sub(1);
     }
 
     fn pop(&mut self, bus: &mut impl Bus) -> u8 {
         self.reg.sp = self.reg.sp.wrapping_add(1);
-        self.read(bus, u16::from_be_bytes([self.reg.sp, STACK_PAGE]))
+        self.read(bus, self.stackpointer())
     }
 }
