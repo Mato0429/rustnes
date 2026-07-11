@@ -1,5 +1,4 @@
 use super::*;
-use crate::nes::mapper::MapperCtx;
 use std::io::{self, Read};
 
 const HEADER_SIZE: usize = 0x10;
@@ -32,7 +31,7 @@ struct RawHeader {
     pub _nvprgram_sc: u8,
     pub chrram_sc: u8,
     pub _nvchrram_sc: u8,
-    pub cpu_ppu_timing: u8,
+    pub nes_region: u8,
     pub console_detail: u8,
     pub other_roms: u8,
     pub expansion_device: u8,
@@ -60,7 +59,7 @@ impl RawHeader {
             _nvprgram_sc: (data[10] & 0xF0) >> 4,
             chrram_sc: data[11] & 0x0F,
             _nvchrram_sc: (data[11] & 0xF0) >> 4,
-            cpu_ppu_timing: data[12] & 0x03,
+            nes_region: data[12] & 0x03,
             console_detail: data[13],
             other_roms: data[14],
             expansion_device: data[15],
@@ -68,9 +67,9 @@ impl RawHeader {
     }
 }
 
-pub struct Nes2Loader;
+pub struct Nes2Parser;
 
-impl Nes2Loader {
+impl Nes2Parser {
     fn calculate_rom_size(lsb: u8, msb: u8, chunk_size: u32) -> u32 {
         if lsb == 0xFF {
             let exp = ((lsb & 0xFC) >> 2) as u32;
@@ -82,7 +81,7 @@ impl Nes2Loader {
     }
 }
 
-impl EmuFileLoader for Nes2Loader {
+impl EmuFileParser for Nes2Parser {
     fn parse<R: Read>(reader: &mut R) -> io::Result<EmuFile> {
         let mut header_data = [0u8; HEADER_SIZE];
         reader.read_exact(&mut header_data)?;
@@ -153,17 +152,17 @@ impl EmuFileLoader for Nes2Loader {
             }
         };
 
-        let cpu_ppu_timing = match rawheader.cpu_ppu_timing {
-            0 => NesTiming::NtscNes,
-            1 => NesTiming::PalNes,
-            2 => NesTiming::MultiRegion,
-            3 => NesTiming::Dendy,
+        let nes_region = match rawheader.nes_region {
+            0 => NesRegion::Ntsc,
+            1 => NesRegion::Pal,
+            2 => NesRegion::Multi,
+            3 => NesRegion::Dendy,
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "invalid timing type (Byte12): {:#010b}",
-                        rawheader.cpu_ppu_timing
+                        "invalid region type (Byte12): {:#010b}",
+                        rawheader.nes_region
                     ),
                 ))
             }
@@ -180,7 +179,7 @@ impl EmuFileLoader for Nes2Loader {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let mapper_ctx = MapperCtx {
+        let nesrom_info = NesRomInfo {
             mapper_id,
             submapper: rawheader.submapper,
             hardwired_nt,
@@ -191,15 +190,14 @@ impl EmuFileLoader for Nes2Loader {
             chrram_size,
         };
 
-        let nesrom = mapper_ctx.create();
-
-        let env_info = EnvInfo {
+        let emufile = EmuFile {
             console_type,
-            cpu_ppu_timing,
-            other_roms: rawheader.other_roms,
-            expansion_device: rawheader.expansion_device,
+            nes_region,
+            other_roms: 0,
+            expansion_device: 0,
+            nesrom_info,
         };
 
-        Ok(EmuFile { nesrom, env_info })
+        Ok(emufile)
     }
 }

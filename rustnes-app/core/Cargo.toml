@@ -1,0 +1,10 @@
+[package]
+name = "rustnes-core"
+version = "0.1.0"
+description = "rustnes core"
+authors = ["you"]
+edition = "2021"
+
+[dependencies]
+bitflags = "2.13.0"
+enum_dispatch = "0.3.13"

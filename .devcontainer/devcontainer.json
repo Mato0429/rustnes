@@ -23,7 +23,7 @@
                 "rust-analyzer.check.command": "clippy",
                 "editor.formatOnSave": true,
                 "rust-analyzer.linkedProjects": [
-                    "./rustnes-app/src-tauri/Cargo.toml"
+                    "./rustnes-app/Cargo.toml"
                 ]
             }
         }

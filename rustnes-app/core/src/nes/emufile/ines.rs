@@ -1,11 +1,8 @@
-use crate::nes::mapper::MapperCtx;
-
 use super::*;
 use std::io::{self, Read};
 
 const HEADER_SIZE: usize = 0x10;
 const FILE_IDENTIFIER: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
-const NES2_IDENTIFIER: u8 = 0x02;
 
 const TRAINER_SIZE: usize = 0x200;
 const PRGROM_CHUNK_SIZE: u32 = 0x4000;
@@ -26,7 +23,7 @@ struct RawHeader {
     pub console_type: u8,
     pub mapper_nibble1: u8,
     pub prgram_size: u8,
-    pub is_pal_tv: bool,
+    pub is_pal: bool,
 }
 
 impl RawHeader {
@@ -43,14 +40,14 @@ impl RawHeader {
             console_type: data[7] & 0x03,
             mapper_nibble1: (data[7] & 0xF0) >> 4,
             prgram_size: data[8],
-            is_pal_tv: data[9] & 0x01 != 0,
+            is_pal: data[9] & 0x01 != 0,
         }
     }
 }
 
-pub struct InesLoader;
+pub struct InesParser;
 
-impl EmuFileLoader for InesLoader {
+impl EmuFileParser for InesParser {
     fn parse<R: Read>(reader: &mut R) -> io::Result<EmuFile> {
         let mut header_data = [0u8; HEADER_SIZE];
         reader.read_exact(&mut header_data)?;
@@ -91,10 +88,10 @@ impl EmuFileLoader for InesLoader {
             }
         };
 
-        let cpu_ppu_timing = if rawheader.is_pal_tv {
-            NesTiming::PalNes
+        let nes_region = if rawheader.is_pal {
+            NesRegion::Pal
         } else {
-            NesTiming::NtscNes
+            NesRegion::Ntsc
         };
 
         let mut _trainer = vec![0u8; TRAINER_SIZE];
@@ -108,7 +105,7 @@ impl EmuFileLoader for InesLoader {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let mapper_ctx = MapperCtx {
+        let nesrom_info = NesRomInfo {
             mapper_id,
             submapper: 0,
             hardwired_nt,
@@ -119,15 +116,14 @@ impl EmuFileLoader for InesLoader {
             chrram_size: CHRRAM_PLACEHOLDER_SIZE,
         };
 
-        let nesrom = mapper_ctx.create();
-
-        let env_info = EnvInfo {
+        let emufile = EmuFile {
             console_type,
-            cpu_ppu_timing,
+            nes_region,
             other_roms: 0,
             expansion_device: 0,
+            nesrom_info,
         };
 
-        Ok(EmuFile { nesrom, env_info })
+        Ok(emufile)
     }
 }

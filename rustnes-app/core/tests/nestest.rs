@@ -1,14 +1,14 @@
 use std::{fs::File, io::BufReader};
 
-use rustnes_app_lib::nes::{
+use rustnes_core::nes::{
     cpu::{Bus, Cpu},
-    loader::parse_emufile,
-    mapper::{Mapper, MapperLogic},
+    emufile::parse_emufile,
+    nesrom::NesRom,
 };
 
 struct MocBus {
     wram: [u8; 0x800],
-    nesrom: Mapper,
+    nesrom: NesRom,
 }
 
 impl Bus for MocBus {
@@ -36,7 +36,7 @@ fn nestest() {
 
     let mut bus = MocBus {
         wram: [0u8; 0x800],
-        nesrom: emufile.nesrom,
+        nesrom: NesRom::new(emufile.nesrom_info),
     };
 
     let mut cpu = Cpu::new();
