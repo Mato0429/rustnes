@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Nrom {
-    hardwired_nt: Mirroring,
+    mirroring: Mirroring,
     prgram_size: u32,
     prgrom_size: u32,
     chrrom_size: u32,
@@ -10,8 +10,14 @@ pub struct Nrom {
 
 impl Nrom {
     pub fn new(args: MapperArgs) -> Self {
+        let mirroring = if args.horizontal_nt {
+            Mirroring::Horizontal
+        } else {
+            Mirroring::Vertical
+        };
+
         Self {
-            hardwired_nt: args.hardwired_nt,
+            mirroring,
             prgram_size: args.prgram_size,
             prgrom_size: args.prgrom_size,
             chrrom_size: args.chrrom_size,

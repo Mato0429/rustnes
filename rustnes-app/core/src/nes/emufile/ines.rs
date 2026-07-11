@@ -63,12 +63,6 @@ impl EmuFileParser for InesParser {
         let mapper_id =
             u16::from_le_bytes([rawheader.mapper_nibble0, rawheader.mapper_nibble1]) as u32;
 
-        let hardwired_nt = if rawheader.horizontal_nt {
-            Mirroring::Horizontal
-        } else {
-            Mirroring::Vertical
-        };
-
         let prgrom_size = PRGROM_CHUNK_SIZE * rawheader.prgrom_size as u32;
         let chrrom_size = CHRROM_CHUNK_SIZE * rawheader.chrrom_size as u32;
         let prgram_size = PRGRAM_CHUNK_SIZE * rawheader.prgram_size as u32;
@@ -105,23 +99,20 @@ impl EmuFileParser for InesParser {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let nesrom_info = NesRomInfo {
-            mapper_id,
-            submapper: 0,
-            hardwired_nt,
-            alternative_nt: rawheader.alternative_nt,
-            prgrom,
-            chrrom,
-            prgram_size,
-            chrram_size: CHRRAM_PLACEHOLDER_SIZE,
-        };
-
         let emufile = EmuFile {
             console_type,
             nes_region,
             other_roms: 0,
             expansion_device: 0,
-            nesrom_info,
+
+            mapper_id,
+            submapper: 0,
+            horizontal_nt: rawheader.horizontal_nt,
+            alternative_nt: rawheader.alternative_nt,
+            prgrom,
+            chrrom,
+            prgram_size,
+            chrram_size: CHRRAM_PLACEHOLDER_SIZE,
         };
 
         Ok(emufile)

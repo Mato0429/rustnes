@@ -1,6 +1,6 @@
 pub mod cpu;
 pub mod emufile;
-pub mod nesrom;
+pub mod nescart;
 pub mod ppu;
 
 /*

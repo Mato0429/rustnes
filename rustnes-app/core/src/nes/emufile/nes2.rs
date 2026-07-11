@@ -33,8 +33,8 @@ struct RawHeader {
     pub _nvchrram_sc: u8,
     pub nes_region: u8,
     pub console_detail: u8,
-    pub other_roms: u8,
-    pub expansion_device: u8,
+    pub _other_roms: u8,
+    pub _expansion_device: u8,
 }
 
 impl RawHeader {
@@ -61,8 +61,8 @@ impl RawHeader {
             _nvchrram_sc: (data[11] & 0xF0) >> 4,
             nes_region: data[12] & 0x03,
             console_detail: data[13],
-            other_roms: data[14],
-            expansion_device: data[15],
+            _other_roms: data[14],
+            _expansion_device: data[15],
         }
     }
 }
@@ -107,12 +107,6 @@ impl EmuFileParser for Nes2Parser {
             rawheader.mapper_nibble2,
             0x00,
         ]);
-
-        let hardwired_nt = if rawheader.horizontal_nt {
-            Mirroring::Horizontal
-        } else {
-            Mirroring::Vertical
-        };
 
         let prgrom_size = Self::calculate_rom_size(
             rawheader.prgrom_lsb,
@@ -179,23 +173,20 @@ impl EmuFileParser for Nes2Parser {
         let mut chrrom = vec![0u8; chrrom_size as usize];
         reader.read_exact(&mut chrrom)?;
 
-        let nesrom_info = NesRomInfo {
-            mapper_id,
-            submapper: rawheader.submapper,
-            hardwired_nt,
-            alternative_nt: rawheader.alternative_nt,
-            prgrom,
-            chrrom,
-            prgram_size,
-            chrram_size,
-        };
-
         let emufile = EmuFile {
             console_type,
             nes_region,
             other_roms: 0,
             expansion_device: 0,
-            nesrom_info,
+
+            mapper_id,
+            submapper: rawheader.submapper,
+            horizontal_nt: rawheader.horizontal_nt,
+            alternative_nt: rawheader.alternative_nt,
+            prgrom,
+            chrrom,
+            prgram_size,
+            chrram_size,
         };
 
         Ok(emufile)

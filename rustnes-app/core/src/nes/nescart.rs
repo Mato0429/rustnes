@@ -1,6 +1,5 @@
 pub mod mapper;
 
-use crate::nes::{emufile::NesRomInfo, nesrom::mapper::MapperArgs};
 use mapper::{MappedCpuRead, MappedCpuWrite, MappedPpuRead, MappedPpuWrite, Mapper, MapperLogic};
 
 #[derive(Debug, Clone, Copy)]
@@ -16,36 +15,15 @@ pub enum PpuWrite {
 }
 
 #[derive(Debug, Clone)]
-pub struct NesRom {
-    mapper: Mapper,
-    prgrom: Vec<u8>,
-    prgram: Vec<u8>,
-    chrrom: Vec<u8>,
-    chrram: Vec<u8>,
+pub struct NesCart {
+    pub mapper: Mapper,
+    pub prgrom: Vec<u8>,
+    pub prgram: Vec<u8>,
+    pub chrrom: Vec<u8>,
+    pub chrram: Vec<u8>,
 }
 
-impl NesRom {
-    pub fn new(info: NesRomInfo) -> Self {
-        let mapper_args = MapperArgs {
-            hardwired_nt: info.hardwired_nt,
-            alternative_nt: info.alternative_nt,
-            prgrom_size: info.prgrom.len() as u32,
-            prgram_size: info.prgram_size,
-            chrrom_size: info.chrrom.len() as u32,
-            chrram_size: info.chrram_size,
-        };
-
-        let mapper = Mapper::new(info.mapper_id, info.submapper, mapper_args).unwrap();
-
-        Self {
-            mapper,
-            prgrom: info.prgrom,
-            prgram: vec![0u8; info.prgram_size as usize],
-            chrrom: info.chrrom,
-            chrram: vec![0u8; info.chrram_size as usize],
-        }
-    }
-
+impl NesCart {
     pub fn cpu_read(&mut self, addr: u16) -> u8 {
         match self.mapper.map_cpu_read(addr) {
             MappedCpuRead::MapperChip(data) => data,

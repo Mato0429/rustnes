@@ -1,8 +1,6 @@
 mod ines;
 mod nes2;
 
-use super::nesrom::NesRom;
-use crate::nes::nesrom::mapper::Mirroring;
 use std::io::{self, Read, Seek, SeekFrom};
 
 pub use ines::InesParser;
@@ -26,24 +24,20 @@ pub enum NesRegion {
 }
 
 #[derive(Debug, Clone)]
-pub struct NesRomInfo {
-    pub mapper_id: u32,
-    pub submapper: u8,
-    pub hardwired_nt: Mirroring,
-    pub alternative_nt: bool,
-    pub prgrom: Vec<u8>,
-    pub chrrom: Vec<u8>,
-    pub prgram_size: u32,
-    pub chrram_size: u32,
-}
-
-#[derive(Debug, Clone)]
 pub struct EmuFile {
     pub console_type: ConsoleType,
     pub nes_region: NesRegion,
     pub other_roms: u8,
     pub expansion_device: u8,
-    pub nesrom_info: NesRomInfo,
+
+    pub mapper_id: u32,
+    pub submapper: u8,
+    pub horizontal_nt: bool,
+    pub alternative_nt: bool,
+    pub prgrom: Vec<u8>,
+    pub chrrom: Vec<u8>,
+    pub prgram_size: u32,
+    pub chrram_size: u32,
 }
 
 pub trait EmuFileParser {
