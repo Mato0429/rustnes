@@ -17,7 +17,7 @@ L262スキャンラインC341サイクルで構成される。
 - L0-239  : Visible
 - L240    : PostRender
 - L241-260: VBlank
-- L261    : PreRender(VBlank)
+- L261    : PreRender
 
 # PPU入出力
 
