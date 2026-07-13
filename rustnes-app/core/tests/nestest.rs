@@ -19,6 +19,14 @@ struct MockBus {
 }
 
 impl Bus for MockBus {
+    fn irq_active(&self) -> bool {
+        false
+    }
+
+    fn nmi_active(&self) -> bool {
+        false
+    }
+
     fn read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..0x2000 => self.wram[(addr & 0x7FF) as usize],

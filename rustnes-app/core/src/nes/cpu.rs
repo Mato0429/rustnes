@@ -20,6 +20,8 @@ const DEFAULT_SP: u8 = 0x00;
 const DEFAULT_PC: u16 = 0x8000; // This value is a placeholder. PC is set by the RESET VECTOR
 
 pub trait Bus {
+    fn nmi_active(&self) -> bool;
+    fn irq_active(&self) -> bool;
     fn read(&mut self, addr: u16) -> u8;
     fn write(&mut self, addr: u16, data: u8);
 }
@@ -28,6 +30,7 @@ pub trait Bus {
 pub struct Cpu {
     pub is_jammed: bool,
     pub total_cycle: u128,
+    pub prev_nmi: bool,
 
     pub reg: Register,
 }
@@ -39,6 +42,7 @@ impl Cpu {
         Self {
             is_jammed: false,
             total_cycle: 0,
+            prev_nmi: false,
 
             reg: Register {
                 a: DEFAULT_A,
@@ -66,6 +70,11 @@ impl Cpu {
     }
 
     pub fn step(&mut self, bus: &mut impl Bus) {
+        if !self.prev_nmi && bus.nmi_active() {
+            self.nmi(bus);
+        }
+        self.prev_nmi = bus.nmi_active();
+
         // TODO: Handle interrupt here
         let opcode = self.fetch(bus);
         let opcode = OPCODE_TABLE[opcode as usize];

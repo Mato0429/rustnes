@@ -24,6 +24,24 @@ pub struct NesCart {
 }
 
 impl NesCart {
+    pub fn empty() -> Self {
+        Self {
+            mapper: Mapper::empty(),
+            prgrom: Vec::new(),
+            prgram: Vec::new(),
+            chrrom: Vec::new(),
+            chrram: Vec::new(),
+        }
+    }
+
+    pub fn irq_active(&self) -> bool {
+        self.mapper.irq_active()
+    }
+
+    pub fn cpu_step(&mut self) {
+        self.mapper.cpu_step();
+    }
+
     pub fn cpu_read(&mut self, addr: u16) -> u8 {
         match self.mapper.map_cpu_read(addr) {
             MappedCpuRead::MapperChip(data) => data,

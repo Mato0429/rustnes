@@ -70,11 +70,19 @@ bitflags! {
 }
 
 /// Holds the PPU's rendering state and control flags.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PpuRegister {
     pub ctrl: PpuCtrl,
     pub mask: PpuMask,
     pub stat: PpuStat,
     pub oamaddr: u8,
     pub ppudata: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LoopyRegister {
+    pub v: u16,
+    pub t: u16,
+    pub fine_x: u8,
+    pub w: bool,
 }

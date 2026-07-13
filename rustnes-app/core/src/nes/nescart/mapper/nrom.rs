@@ -103,7 +103,7 @@ impl MapperLogic for Nrom {
 
             0x2000..0x3000 => {
                 // TODO: Apply mirroring
-                let offset = addr & 0x1FFF;
+                let offset = addr & 0x07FF;
                 MappedPpuRead::InternalVram(offset)
             }
 
@@ -117,7 +117,7 @@ impl MapperLogic for Nrom {
 
             0x2000..0x3000 => {
                 // TODO: Apply mirroring
-                let offset = addr & 0x1FFF;
+                let offset = addr & 0x07FF;
                 MappedPpuWrite::InternalVram(offset, data)
             }
 
