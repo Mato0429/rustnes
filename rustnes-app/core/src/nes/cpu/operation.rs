@@ -83,11 +83,11 @@ impl Cpu {
     }
 
     pub(super) fn nmi<B: Bus>(&mut self, bus: &mut B) {
-        self.fetch(bus); // discard the padding byte
+        self.read_at_pc(bus);
         let [pcl, pch] = self.reg.pc.to_le_bytes();
         self.push(bus, pch);
         self.push(bus, pcl);
-        self.push(bus, self.reg.p.as_byte(true));
+        self.push(bus, self.reg.p.as_byte(false));
         self.reg.p.insert(Status::I);
         let lo = self.read(bus, 0xFFFA);
         let hi = self.read(bus, 0xFFFB);

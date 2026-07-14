@@ -26,32 +26,6 @@ bitflags! {
     }
 }
 
-impl PpuCtrl {
-    pub fn get_increment(&self) -> u16 {
-        if self.contains(Self::I) {
-            32
-        } else {
-            1
-        }
-    }
-
-    pub fn spr_pattern_base(&self) -> u16 {
-        if self.contains(Self::S) && !self.contains(Self::H) {
-            0x1000
-        } else {
-            0
-        }
-    }
-
-    pub fn bg_pattern_base(&self) -> u16 {
-        if self.contains(Self::B) {
-            0x1000
-        } else {
-            0
-        }
-    }
-}
-
 bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct PpuMask: u8 {
@@ -71,19 +45,19 @@ bitflags! {
         const RenderSpr = 0x10;
 
         /// Emphasize red
-        const R = 0x20;
+        const EmpR = 0x20;
 
         /// Emphasize green
-        const G = 0x40;
+        const EmpG = 0x40;
 
         /// Emphasize blue
-        const B = 0x80;
+        const EmpB = 0x80;
     }
 }
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
-    pub struct PpuStatus: u8 {
+    pub struct PpuStat: u8 {
         /// Sprite overflow flag
         const O = 0x20;
 
@@ -100,27 +74,15 @@ bitflags! {
 pub struct PpuRegister {
     pub ctrl: PpuCtrl,
     pub mask: PpuMask,
-    pub stat: PpuStatus,
-    pub oam_addr: u8,
-    pub ppu_data_buf: u8,
+    pub stat: PpuStat,
+    pub oamaddr: u8,
+    pub ppudata: u8,
 }
 
-impl PpuRegister {
-    /// Creates a new `PpuRegister` in its power-on state.
-    pub fn new() -> Self {
-        Self {
-            ctrl: PpuCtrl::empty(),
-            mask: PpuMask::empty(),
-            stat: PpuStatus::empty(),
-            oam_addr: 0x00,
-            ppu_data_buf: 0x00,
-        }
-    }
-
-    /// Resets the PPU Register.
-    pub fn reset(&mut self) {
-        self.ctrl = PpuCtrl::empty();
-        self.mask = PpuMask::empty();
-        self.ppu_data_buf = 0x00;
-    }
+#[derive(Debug, Clone, Copy)]
+pub struct LoopyRegister {
+    pub v: u16,
+    pub t: u16,
+    pub fine_x: u8,
+    pub w: bool,
 }

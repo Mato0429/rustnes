@@ -7,12 +7,6 @@ use cpu::Cpu;
 use nescart::{NesCart, PpuRead, PpuWrite};
 use ppu::Ppu;
 
-/*
-TODO:
-- Openbus (Patial bits)
-    バス上のデータをBusdata(データ, 有効なビットのマスク)で扱うようにする
-*/
-
 struct PpuBus<'a> {
     cart: &'a mut NesCart,
     vram: &'a mut [u8; 0x800],
@@ -20,24 +14,18 @@ struct PpuBus<'a> {
 
 impl<'a> ppu::Bus for PpuBus<'a> {
     fn read(&mut self, addr: u16) -> u8 {
-        let read_response = match addr {
-            0x0000..0x3F00 => self.cart.ppu_read(addr & 0x1FFF),
-            _ => unreachable!(),
-        };
+        let addr = if addr >= 0x3000 { addr - 0x1000 } else { addr };
 
-        match read_response {
+        match self.cart.ppu_read(addr) {
             PpuRead::Internal(addr) => self.vram[(addr & 0x7FF) as usize],
             PpuRead::External(data) => data,
         }
     }
 
     fn write(&mut self, addr: u16, data: u8) {
-        let write_response = match addr {
-            0x0000..0x3F00 => self.cart.ppu_write(addr & 0x1FFF, data),
-            _ => unreachable!(),
-        };
+        let addr = if addr >= 0x3000 { addr - 0x1000 } else { addr };
 
-        match write_response {
+        match self.cart.ppu_write(addr, data) {
             PpuWrite::Internal(addr, data) => self.vram[(addr & 0x7FF) as usize] = data,
             PpuWrite::External => (),
         }
@@ -69,12 +57,12 @@ impl<'a> cpu::Bus for SyncBus<'a> {
         };
 
         match addr {
-            0x0000..0x2000 => self.wram[(addr & 0x7FF) as usize],
-            0x2000..0x4000 if addr & 0x07 == 2 => self.ppu.read_ppustat(),
-            0x2000..0x4000 if addr & 0x07 == 4 => self.ppu.read_oamdata(),
-            0x2000..0x4000 if addr & 0x07 == 7 => self.ppu.read_ppudata(&mut ppubus),
-            0x2000..0x4000 => 0x00,
-            0x4000..0x4020 => 0x00,
+            0x0000..=0x1FFF => self.wram[(addr & 0x7FF) as usize],
+            0x2000..=0x3FFF if addr & 0x07 == 2 => self.ppu.read_ppustat(),
+            0x2000..=0x3FFF if addr & 0x07 == 4 => self.ppu.read_oamdata(),
+            0x2000..=0x3FFF if addr & 0x07 == 7 => self.ppu.read_ppudata(&mut ppubus),
+            0x2000..=0x3FFF => 0x00,
+            0x4000..=0x401F => 0x00,
             0x4020..=u16::MAX => self.cart.cpu_read(addr),
         }
     }
@@ -88,16 +76,16 @@ impl<'a> cpu::Bus for SyncBus<'a> {
         };
 
         match addr {
-            0x0000..0x2000 => self.wram[(addr & 0x7FF) as usize] = data,
-            0x2000..0x4000 if addr & 0x07 == 0 => self.ppu.write_ppuctrl(data),
-            0x2000..0x4000 if addr & 0x07 == 1 => self.ppu.write_ppumask(data),
-            0x2000..0x4000 if addr & 0x07 == 3 => self.ppu.write_oamaddr(data),
-            0x2000..0x4000 if addr & 0x07 == 4 => self.ppu.write_oamdata(data),
-            0x2000..0x4000 if addr & 0x07 == 5 => self.ppu.write_ppuscrl(data),
-            0x2000..0x4000 if addr & 0x07 == 6 => self.ppu.write_ppuaddr(data),
-            0x2000..0x4000 if addr & 0x07 == 7 => self.ppu.write_ppudata(&mut ppubus, data),
-            0x2000..0x4000 => (),
-            0x4000..0x4020 => (),
+            0x0000..=0x1FFF => self.wram[(addr & 0x7FF) as usize] = data,
+            0x2000..=0x3FFF if addr & 0x07 == 0 => self.ppu.write_ppuctrl(data),
+            0x2000..=0x3FFF if addr & 0x07 == 1 => self.ppu.write_ppumask(data),
+            0x2000..=0x3FFF if addr & 0x07 == 3 => self.ppu.write_oamaddr(data),
+            0x2000..=0x3FFF if addr & 0x07 == 4 => self.ppu.write_oamdata(data),
+            0x2000..=0x3FFF if addr & 0x07 == 5 => self.ppu.write_ppuscrl(data),
+            0x2000..=0x3FFF if addr & 0x07 == 6 => self.ppu.write_ppuaddr(data),
+            0x2000..=0x3FFF if addr & 0x07 == 7 => self.ppu.write_ppudata(&mut ppubus, data),
+            0x2000..=0x3FFF => (),
+            0x4000..=0x401F => (),
             0x4020..=u16::MAX => self.cart.cpu_write(addr, data),
         }
     }

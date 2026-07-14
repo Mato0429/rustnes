@@ -1,4 +1,5 @@
 pub mod mapper;
+pub mod mirroring;
 
 use mapper::{MappedCpuRead, MappedCpuWrite, MappedPpuRead, MappedPpuWrite, Mapper, MapperLogic};
 

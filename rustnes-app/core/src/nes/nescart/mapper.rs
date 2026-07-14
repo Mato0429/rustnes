@@ -10,15 +10,6 @@ pub(super) use logic::*;
 use empty::Empty;
 use nrom::Nrom;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Mirroring {
-    Horizontal,
-    Vertical,
-    SingleScreen0,
-    SingleScreen1,
-    FourScreen,
-}
-
 #[derive(Debug, Clone)]
 pub struct MapperArgs {
     pub horizontal_nt: bool,

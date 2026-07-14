@@ -1,32 +1,33 @@
-/// Stores color indices that point to the color in the system palette.
-#[derive(Debug, Clone, Copy)]
-pub struct PaletteRam([u8; 0x20]);
+pub const PALETTE_SIZE: usize = 0x20;
 
-impl PaletteRam {
+#[derive(Debug, Clone, Copy)]
+pub struct Palette {
+    inner: [u8; PALETTE_SIZE],
+}
+
+impl Palette {
     /// Creates a new `PaletteRam` in its power-on state.
-    pub fn new() -> Self {
-        Self([0u8; 0x20])
+    pub fn new(inner: [u8; PALETTE_SIZE]) -> Self {
+        Self { inner }
     }
 
     /// Reads a color index.
-    pub fn read(&self, palette_addr: u16) -> u8 {
-        self.0[Self::resolve_address(palette_addr)]
+    pub fn read(&self, addr: u8) -> u8 {
+        self.inner[Self::resolve_address(addr)]
     }
 
     /// Writes a color index.
-    pub fn write(&mut self, palette_addr: u16, data: u8) {
-        assert!(data & 0xC0 == 0, "invalid palette index: {data}");
-        self.0[Self::resolve_address(palette_addr)] = data;
+    pub fn write(&mut self, addr: u8, data: u8) {
+        self.inner[Self::resolve_address(addr)] = data;
     }
 
     /// Resolves palette mirroring.
     #[inline]
-    fn resolve_address(palette_addr: u16) -> usize {
-        let is_bg = palette_addr & 0x3 == 0;
-        if is_bg {
+    fn resolve_address(addr: u8) -> usize {
+        if addr & 0x03 == 0 {
             0x00
         } else {
-            palette_addr as usize
+            (addr & 0x1F) as usize
         }
     }
 }
