@@ -67,9 +67,10 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) {
         loop {
             let t0 = Instant::now();
 
-            for _ in 0..30 {
+            for _ in 0..10000 {
                 nes.step();
             }
+            println!("{:?}", nes.vram);
 
             let rgb: Vec<u8> = nes.display_buffer().into();
             fb.publish(rgb);
