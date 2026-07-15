@@ -1,4 +1,4 @@
-pub const PALETTE_SIZE: usize = 0x20;
+const PALETTE_SIZE: usize = 0x20;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Palette {
@@ -7,8 +7,10 @@ pub struct Palette {
 
 impl Palette {
     /// Creates a new `PaletteRam` in its power-on state.
-    pub fn new(inner: [u8; PALETTE_SIZE]) -> Self {
-        Self { inner }
+    pub fn new() -> Self {
+        Self {
+            inner: [0u8; PALETTE_SIZE],
+        }
     }
 
     /// Reads a color index.

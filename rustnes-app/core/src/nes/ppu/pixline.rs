@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, Default)]
-pub struct TileLine {
+pub struct PixLine {
     pub tile_idx: u8,
     pub at_lo: bool,
     pub at_hi: bool,
@@ -8,15 +8,15 @@ pub struct TileLine {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct BgTileLiner {
+pub struct BgPixLiner {
     at_lo: u16,
     at_hi: u16,
     pt_lo: u16,
     pt_hi: u16,
 }
 
-impl BgTileLiner {
-    pub fn load_tileline(&mut self, latch: TileLine) {
+impl BgPixLiner {
+    pub fn load_tileline(&mut self, latch: PixLine) {
         self.at_lo = (self.at_lo & 0xFF00) | if latch.at_lo { 0xFF } else { 0x00 };
         self.at_hi = (self.at_hi & 0xFF00) | if latch.at_hi { 0xFF } else { 0x00 };
         self.pt_lo = (self.pt_lo & 0xFF00) | latch.pt_lo as u16;
