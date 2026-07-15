@@ -133,7 +133,6 @@ impl Ppu {
         let backdrop_bg =
             bg_pal & 0x03 == 0 || !self.mask.contains(PpuMask::ShowLeftmostBg) && self.cycle <= 8;
         let bg_pal = if backdrop_bg { 0x00 } else { bg_pal };
-        self.bg_liner.shift();
 
         let color_idx = self.palette.read(bg_pal);
         self.set_pixel(self.cycle - 1, self.scanline, color_idx);

@@ -22,6 +22,8 @@ impl Ppu {
     }
 
     fn advance_tile_fetch(&mut self, bus: &mut impl Bus) {
+        self.bg_liner.shift();
+
         match ((self.cycle - 1) % 8) + 1 {
             // nametable fetch
             1 => self.latch_addr(self.nt_addr()),
