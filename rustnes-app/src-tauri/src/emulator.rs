@@ -38,11 +38,11 @@ impl FrameBuffer {
 
 pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) {
     std::thread::spawn(move || {
-        let file = File::open("/workspaces/rustnes/assets/private/dk.nes").unwrap();
+        let file = File::open("/workspaces/rustnes/assets/private/smb.nes").unwrap();
         let emufile = parse_emufile(BufReader::new(file)).unwrap();
 
         let mapper_args = MapperArgs {
-            horizontal_nt: emufile.horizontal_nt,
+            vertical_nt: emufile.vertical_nt,
             alternative_nt: emufile.alternative_nt,
             prgrom_size: emufile.prgrom.len() as u32,
             prgram_size: emufile.prgram_size,
@@ -67,7 +67,7 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) {
         loop {
             let t0 = Instant::now();
 
-            for _ in 0..3000 {
+            for _ in 0..10000 {
                 nes.step();
             }
 

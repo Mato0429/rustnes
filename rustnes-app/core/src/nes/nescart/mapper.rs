@@ -12,7 +12,7 @@ use nrom::Nrom;
 
 #[derive(Debug, Clone)]
 pub struct MapperArgs {
-    pub horizontal_nt: bool,
+    pub vertical_nt: bool,
     pub alternative_nt: bool,
     pub prgrom_size: u32,
     pub chrrom_size: u32,

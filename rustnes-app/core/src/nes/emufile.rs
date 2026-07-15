@@ -32,7 +32,7 @@ pub struct EmuFile {
 
     pub mapper_id: u32,
     pub submapper: u8,
-    pub horizontal_nt: bool,
+    pub vertical_nt: bool,
     pub alternative_nt: bool,
     pub prgrom: Vec<u8>,
     pub chrrom: Vec<u8>,

@@ -14,6 +14,7 @@ struct PpuBus<'a> {
 
 impl<'a> ppu::Bus for PpuBus<'a> {
     fn read(&mut self, addr: u16) -> u8 {
+        let addr = addr & 0x3FFF;
         let addr = if addr >= 0x3000 { addr - 0x1000 } else { addr };
 
         match self.cart.ppu_read(addr) {
@@ -23,6 +24,7 @@ impl<'a> ppu::Bus for PpuBus<'a> {
     }
 
     fn write(&mut self, addr: u16, data: u8) {
+        let addr = addr & 0x3FFF;
         let addr = if addr >= 0x3000 { addr - 0x1000 } else { addr };
 
         match self.cart.ppu_write(addr, data) {

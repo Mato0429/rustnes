@@ -11,10 +11,10 @@ pub struct Nrom {
 
 impl Nrom {
     pub fn new(args: MapperArgs) -> Self {
-        let mirroring = if args.horizontal_nt {
-            Mirroring::Horizontal
-        } else {
+        let mirroring = if args.vertical_nt {
             Mirroring::Vertical
+        } else {
+            Mirroring::Horizontal
         };
 
         Self {

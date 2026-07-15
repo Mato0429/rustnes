@@ -75,7 +75,7 @@ fn nestest() {
     let emufile = parse_emufile(BufReader::new(nestest)).unwrap();
 
     let mapper_args = MapperArgs {
-        horizontal_nt: emufile.horizontal_nt,
+        vertical_nt: emufile.vertical_nt,
         alternative_nt: emufile.alternative_nt,
         prgrom_size: emufile.prgrom.len() as u32,
         prgram_size: emufile.prgram_size,

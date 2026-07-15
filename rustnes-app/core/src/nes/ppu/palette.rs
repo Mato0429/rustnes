@@ -13,21 +13,24 @@ impl Palette {
 
     /// Reads a color index.
     pub fn read(&self, addr: u8) -> u8 {
-        self.inner[Self::resolve_address(addr)]
+        self.inner[Self::resolve_addr(addr) as usize] & 0x3F
     }
 
     /// Writes a color index.
     pub fn write(&mut self, addr: u8, data: u8) {
-        self.inner[Self::resolve_address(addr)] = data;
+        self.inner[Self::resolve_addr(addr) as usize] = data & 0x3F;
     }
 
     /// Resolves palette mirroring.
-    #[inline]
-    fn resolve_address(addr: u8) -> usize {
-        if addr & 0x03 == 0 {
-            0x00
-        } else {
-            (addr & 0x1F) as usize
+    #[inline(always)]
+    fn resolve_addr(addr: u8) -> u8 {
+        let addr = addr & 0x1F;
+        match addr {
+            0x10 => 0x00,
+            0x14 => 0x04,
+            0x18 => 0x08,
+            0x1C => 0x0C,
+            _ => addr,
         }
     }
 }

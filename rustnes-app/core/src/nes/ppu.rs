@@ -96,6 +96,15 @@ impl Ppu {
 
     pub fn read_ppustat(&mut self) -> u8 {
         self.lpy.w = false;
+
+        // DEBUG
+        if self.scanline == 30 && (self.cycle as isize - 130) < 7 {
+            self.reg.stat.insert(PpuStat::S);
+        }
+        if self.reg.stat.contains(PpuStat::V) {
+            self.reg.stat.remove(PpuStat::S);
+        }
+
         let byte = self.reg.stat.bits();
         self.reg.stat.remove(PpuStat::V);
         byte
@@ -106,7 +115,7 @@ impl Ppu {
     }
 
     pub fn read_ppudata(&mut self, bus: &mut impl Bus) -> u8 {
-        let addr = self.lpy.v;
+        let addr = self.lpy.v & 0x7FFF;
         let byte = if (0x0000..0x3F00).contains(&addr) {
             self.reg.ppudata
         } else {
@@ -170,7 +179,7 @@ impl Ppu {
     }
 
     pub fn write_ppudata(&mut self, bus: &mut impl Bus, data: u8) {
-        let addr = self.lpy.v;
+        let addr = self.lpy.v & 0x3FFF;
         if (0x0000..0x3F00).contains(&addr) {
             bus.write(addr, data);
         } else {
@@ -192,21 +201,20 @@ impl Ppu {
 
     // Cycles the PPU
     pub fn tick(&mut self, bus: &mut impl Bus) {
-        /*println!(
-            "sl:{:} cyc:{:} lpyv:{:} lpyt:{:} nmi:{:} vblank:{:}",
-            self.scanline,
-            self.cycle,
-            self.lpy.v,
-            self.lpy.t,
-            self.nmi_active(),
-            self.reg.stat.contains(PpuStat::V)
-        );*/
-
         let render_bg = self.reg.mask.contains(PpuMask::RenderBG);
         let render_sprite = self.reg.mask.contains(PpuMask::RenderSpr);
 
+        /*if let (50, 5) = (self.scanline, self.cycle) {
+            println!(
+                "sl={:} cyc={:} v={:04X} t={:04X} fineX={}",
+                self.scanline, self.cycle, self.lpy.v, self.lpy.t, self.lpy.fine_x
+            );
+        }*/
+
         if render_bg || render_sprite {
-            self.render_pixel();
+            if let (0..=239, 1..=256) = (self.scanline, self.cycle) {
+                self.render_pixel();
+            }
 
             if let (0..=239 | 261, 1..=256 | 321..=336) = (self.scanline, self.cycle) {
                 self.bg_tile_fetch(bus)
@@ -279,7 +287,7 @@ impl Ppu {
 
     fn increment_coarse_x(&mut self) {
         let coarse_x = self.lpy.v & 0x001F;
-        if coarse_x >= 31 {
+        if coarse_x == 31 {
             self.lpy.v &= 0x7FE0; // set coarseX to 0
             self.lpy.v ^= 0x0400; // inverse nametable lo
         } else {
@@ -289,7 +297,7 @@ impl Ppu {
 
     fn increment_fine_y(&mut self) {
         let fine_y = (self.lpy.v & 0x7000) >> 12;
-        if fine_y >= 7 {
+        if fine_y == 7 {
             self.lpy.v &= 0x0FFF; // set fineY to 0
             self.increment_coarse_y();
         } else {
@@ -363,32 +371,24 @@ impl Ppu {
         [lo, hi]
     }
 
-    fn set_pixel(&mut self, x: usize, y: usize, pixel_idx: u8) {
-        let display_idx = (DISPLAY_WIDTH * y + x) * 4;
-        let color_idx = self.palette.read(pixel_idx) as usize * 3;
-        let r = SYSTEM_PALETTE[color_idx];
-        let g = SYSTEM_PALETTE[color_idx + 1];
-        let b = SYSTEM_PALETTE[color_idx + 2];
+    fn set_pixel(&mut self, x: usize, y: usize, color_idx: u8) {
+        if let (0..DISPLAY_WIDTH, 0..DISPLAY_HEIGHT) = (x, y) {
+            let syspal_idx = color_idx as usize * 3;
+            let display_idx = (DISPLAY_WIDTH * y + x) * 4;
 
-        self.display[display_idx] = r;
-        self.display[display_idx + 1] = g;
-        self.display[display_idx + 2] = b;
-        self.display[display_idx + 3] = 0xFF;
+            self.display[display_idx] = SYSTEM_PALETTE[syspal_idx]; // R
+            self.display[display_idx + 1] = SYSTEM_PALETTE[syspal_idx + 1]; // G
+            self.display[display_idx + 2] = SYSTEM_PALETTE[syspal_idx + 2]; // B
+            self.display[display_idx + 3] = 0xFF; // A
+        }
     }
 
     fn render_pixel(&mut self) {
-        let in_fetch_cycle = matches!(self.cycle, 1..=256 | 321..=336);
-        let in_render_scanline = matches!(self.scanline, 0..=239 | 261);
+        let bg_pal = self.bg_tileliner.pixel_index(self.lpy.fine_x);
+        let bg_pal = if bg_pal & 0x03 == 0 { 0x00 } else { bg_pal };
+        self.bg_tileliner.shift();
 
-        if in_fetch_cycle && in_render_scanline {
-            let bg_pixel_idx = self.bg_tileliner.pixel_index(self.lpy.fine_x);
-            self.bg_tileliner.shift();
-
-            if let (1..=256, 0..=239) = (self.cycle, self.scanline) {
-                let x = self.cycle - 1;
-                let y = self.scanline;
-                self.set_pixel(x, y, bg_pixel_idx);
-            }
-        }
+        let color_idx = self.palette.read(bg_pal);
+        self.set_pixel(self.cycle - 1, self.scanline, color_idx);
     }
 }

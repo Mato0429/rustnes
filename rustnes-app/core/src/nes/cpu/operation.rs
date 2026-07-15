@@ -1,5 +1,6 @@
-use super::{Bus, Cpu, Status, BRK_VECTOR};
+use super::{Bus, Cpu, Status};
 
+const BRK_VECTOR: u16 = 0xFFFE;
 const LXA_CONST: u8 = 0xEE;
 const ANE_CONST: u8 = 0xEE;
 
@@ -74,6 +75,18 @@ impl Cpu {
         self.reg.p.set(Status::C, !borrow);
         self.set_nz(res);
     }
+
+    /// Before call this method, read or fetch pc to consume a cylce
+    pub(super) fn handle_interrupt<B: Bus>(&mut self, bus: &mut B, vector: u16, b_flag: bool) {
+        let [pcl, pch] = self.reg.pc.to_le_bytes();
+        self.push(bus, pch);
+        self.push(bus, pcl);
+        self.push(bus, self.reg.p.as_byte(b_flag));
+        self.reg.p.insert(Status::I);
+        let lo = self.read(bus, vector);
+        let hi = self.read(bus, vector.wrapping_add(1));
+        self.reg.pc = u16::from_le_bytes([lo, hi]);
+    }
 }
 
 impl Cpu {
@@ -82,28 +95,9 @@ impl Cpu {
         self.is_jammed = true;
     }
 
-    pub(super) fn nmi<B: Bus>(&mut self, bus: &mut B) {
-        self.read_at_pc(bus);
-        let [pcl, pch] = self.reg.pc.to_le_bytes();
-        self.push(bus, pch);
-        self.push(bus, pcl);
-        self.push(bus, self.reg.p.as_byte(false));
-        self.reg.p.insert(Status::I);
-        let lo = self.read(bus, 0xFFFA);
-        let hi = self.read(bus, 0xFFFB);
-        self.reg.pc = u16::from_le_bytes([lo, hi]);
-    }
-
     pub(super) fn brk_implied<B: Bus>(&mut self, bus: &mut B) {
         self.fetch(bus); // discard the padding byte
-        let [pcl, pch] = self.reg.pc.to_le_bytes();
-        self.push(bus, pch);
-        self.push(bus, pcl);
-        self.push(bus, self.reg.p.as_byte(true));
-        self.reg.p.insert(Status::I);
-        let lo = self.read(bus, BRK_VECTOR);
-        let hi = self.read(bus, BRK_VECTOR.wrapping_add(1));
-        self.reg.pc = u16::from_le_bytes([lo, hi]);
+        self.handle_interrupt(bus, BRK_VECTOR, true);
     }
 
     pub(super) fn rti_implied<B: Bus>(&mut self, bus: &mut B) {
