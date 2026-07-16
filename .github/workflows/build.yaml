@@ -24,12 +24,11 @@ jobs:
         with:
           node-version: lts/*
 
-      # Windowsのみなので Rust の target 追加は不要
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: install frontend dependencies
-        run: npm install # 使用しているパッケージマネージャに合わせる
+        run: npm install
 
       - uses: tauri-apps/tauri-action@v0
         env:
