@@ -12,9 +12,10 @@
   "app": {
     "windows": [
       {
-        "title": "rustnes-app",
-        "width": 800,
-        "height": 600
+        "title": "rustnes",
+        "decorations": false,
+        "minWidth": 256,
+        "minHeight": 260
       }
     ],
     "security": {
@@ -23,7 +24,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

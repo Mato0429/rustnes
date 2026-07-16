@@ -1,27 +1,36 @@
 use arc_swap::ArcSwap;
-use rustnes_core::nes::emufile::parse_emufile;
-use rustnes_core::nes::nescart::mapper::{Mapper, MapperArgs};
 use rustnes_core::nes::nescart::NesCart;
 use rustnes_core::nes::Nes;
-use std::fs::File;
-use std::io::BufReader;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+const EMU_THREADSTACK: usize = 8 * 1024 * 1024;
+const EMU_FRAMERATE: f64 = 60.0;
+
+pub enum EmuCommand {
+    Reset,
+    LoadCart(NesCart),
+}
+
+pub struct EmuHandle {
+    pub cmd_tx: Sender<EmuCommand>,
+}
+
 pub struct FrameBuffer {
-    pub width: u32,
-    pub height: u32,
+    pub width: u16,
+    pub height: u16,
     current: ArcSwap<Vec<u8>>,
     generation: AtomicU64,
 }
 
 impl FrameBuffer {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub fn new(width: u16, height: u16) -> Self {
         Self {
             width,
             height,
-            current: ArcSwap::from_pointee(vec![0u8; (width * height * 3) as usize]),
+            current: ArcSwap::from_pointee(vec![0u8; (width as usize) * (height as usize) * 4]),
             generation: AtomicU64::new(0),
         }
     }
@@ -36,48 +45,44 @@ impl FrameBuffer {
     }
 }
 
-pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) {
-    std::thread::spawn(move || {
-        let file = File::open("/workspaces/rustnes/assets/private/smb.nes").unwrap();
-        let emufile = parse_emufile(BufReader::new(file)).unwrap();
+pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<EmuCommand>();
 
-        let mapper_args = MapperArgs {
-            vertical_nt: emufile.vertical_nt,
-            alternative_nt: emufile.alternative_nt,
-            prgrom_size: emufile.prgrom.len() as u32,
-            prgram_size: emufile.prgram_size,
-            chrrom_size: emufile.chrrom.len() as u32,
-            chrram_size: emufile.chrram_size,
-        };
+    let mut nes = Nes::new();
+    nes.reset();
 
-        let cart = NesCart {
-            mapper: Mapper::new(emufile.mapper_id, emufile.submapper, mapper_args).unwrap(),
-            prgrom: emufile.prgrom,
-            prgram: vec![0u8; emufile.prgram_size as usize],
-            chrrom: emufile.chrrom,
-            chrram: vec![0u8; emufile.chrram_size as usize],
-        };
+    let target = Duration::from_secs_f64(1.0 / EMU_FRAMERATE);
+    let mut buffer = [0u8; 256 * 240 * 4];
 
-        let mut nes = Nes::new();
-        nes.load_cart(cart);
-        nes.reset();
-
-        let target = Duration::from_micros(16_667); // 60fps
-
-        loop {
+    std::thread::Builder::new()
+        .name("emuthread".into())
+        .stack_size(EMU_THREADSTACK)
+        .spawn(move || loop {
             let t0 = Instant::now();
 
-            for _ in 0..10000 {
+            while let Ok(cmd) = cmd_rx.try_recv() {
+                match cmd {
+                    EmuCommand::Reset => nes.reset(),
+                    EmuCommand::LoadCart(cart) => {
+                        nes.load_cart(cart);
+                        nes.reset();
+                    }
+                }
+            }
+
+            while !nes.is_frame_ready() {
                 nes.step();
             }
 
-            let rgb: Vec<u8> = nes.display_buffer().into();
-            fb.publish(rgb);
+            nes.output_frame(&mut buffer);
+            fb.publish(buffer.to_vec());
 
             let elapsed = t0.elapsed();
             if elapsed < target {
-                std::thread::sleep(target - elapsed);
+                spin_sleep::sleep(target - elapsed);
             }
-        }
-    });
+        })
+        .unwrap();
+
+    EmuHandle { cmd_tx }
 }

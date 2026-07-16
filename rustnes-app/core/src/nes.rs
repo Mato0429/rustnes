@@ -153,7 +153,11 @@ impl Nes {
         self.cart = cart;
     }
 
-    pub fn display_buffer(&self) -> &[u8; 256 * 240 * 4] {
-        self.ppu.display_buffer()
+    pub fn output_frame(&mut self, buffer: &mut [u8; 256 * 240 * 4]) {
+        self.ppu.output_frame(buffer);
+    }
+
+    pub fn is_frame_ready(&self) -> bool {
+        self.ppu.is_frame_ready()
     }
 }

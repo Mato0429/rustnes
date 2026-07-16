@@ -102,7 +102,7 @@ impl Ppu {
     pub fn read_ppudata(&mut self, bus: &mut impl Bus) -> u8 {
         let addr = self.scrl.v & 0x7FFF;
         let byte = if (0x0000..0x3F00).contains(&addr) {
-            self.ppudata
+            self.ppudata_buffer
         } else {
             self.palette.read((addr & 0x1F) as u8)
         };
