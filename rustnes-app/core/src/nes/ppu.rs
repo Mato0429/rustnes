@@ -7,7 +7,7 @@ use background::{BgPixLine, BgPixLiner};
 use palette::Palette;
 use registers::{PpuCtrl, PpuMask, PpuScrl, PpuStat};
 
-const SYSTEM_PALETTE: &[u8] = include_bytes!("/workspaces/rustnes/assets/palette/2C02G_U_wiki.pal");
+const SYSTEM_PALETTE: &[u8] = include_bytes!("./ppu/2C02G_U_wiki.pal");
 
 const FRAME_WIDTH: usize = 256;
 const FRAME_HEIGHT: usize = 240;
