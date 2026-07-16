@@ -35,8 +35,8 @@ impl FrameBuffer {
         }
     }
 
-    pub fn publish(&self, frame: Vec<u8>) {
-        self.current.store(Arc::new(frame));
+    pub fn publish(&self, frame: &[u8]) {
+        self.current.store(Arc::new(frame.to_vec()));
         self.generation.fetch_add(1, Ordering::Release);
     }
 
@@ -52,7 +52,7 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
     nes.reset();
 
     let target = Duration::from_secs_f64(1.0 / EMU_FRAMERATE);
-    let mut buffer = [0u8; 256 * 240 * 4];
+    let mut buffer = vec![0u8; 256 * 240 * 4];
 
     std::thread::Builder::new()
         .name("emuthread".into())
@@ -75,7 +75,7 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
             }
 
             nes.output_frame(&mut buffer);
-            fb.publish(buffer.to_vec());
+            fb.publish(&buffer);
 
             let elapsed = t0.elapsed();
             if elapsed < target {

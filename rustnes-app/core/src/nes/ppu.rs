@@ -87,7 +87,7 @@ impl Ppu {
         self.ppudata_buffer = 0x00;
     }
 
-    pub fn output_frame(&mut self, buffer: &mut [u8; FRAME_WIDTH * FRAME_HEIGHT * 4]) {
+    pub fn output_frame(&mut self, buffer: &mut [u8]) {
         for (i, &color) in self.frontframe.iter().enumerate() {
             let pal_idx = (color * 3) as usize;
             buffer[i * 4] = SYSTEM_PALETTE[pal_idx];
