@@ -17,10 +17,10 @@ pub trait Bus {
     fn write(&mut self, addr: u16, data: u8);
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Ppu {
-    frontframe: [u8; FRAME_WIDTH * FRAME_HEIGHT],
-    backframe: [u8; FRAME_WIDTH * FRAME_HEIGHT],
+    frontframe: Vec<u8>,
+    backframe: Vec<u8>,
     is_frame_ready: bool,
     scanline: usize,
     cycle: usize,
@@ -47,8 +47,8 @@ impl Ppu {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            frontframe: [0x00; FRAME_WIDTH * FRAME_HEIGHT],
-            backframe: [0x00; FRAME_WIDTH * FRAME_HEIGHT],
+            frontframe: vec![0x00; FRAME_WIDTH * FRAME_HEIGHT],
+            backframe: vec![0x00; FRAME_WIDTH * FRAME_HEIGHT],
             is_frame_ready: false,
             scanline: 261,
             cycle: 0,
@@ -95,16 +95,10 @@ impl Ppu {
             buffer[i * 4 + 2] = SYSTEM_PALETTE[pal_idx + 2];
             buffer[i * 4 + 3] = 0xFF;
         }
-
-        self.is_frame_ready = false;
     }
 
     pub fn nmi_active(&self) -> bool {
         self.stat.contains(PpuStat::Vblank) && self.ctrl.contains(PpuCtrl::NmiEnable)
-    }
-
-    pub fn is_frame_ready(&self) -> bool {
-        self.is_frame_ready
     }
 
     pub fn cpu_step(&mut self, bus: &mut impl Bus) {
@@ -140,6 +134,12 @@ impl Ppu {
         }
 
         self.advance_cycle();
+    }
+
+    pub(super) fn is_frame_ready(&mut self) -> bool {
+        let res = self.is_frame_ready;
+        self.is_frame_ready = false;
+        res
     }
 
     fn render_pixel(&mut self) {

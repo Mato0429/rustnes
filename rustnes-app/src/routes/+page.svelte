@@ -5,10 +5,12 @@
   import { open } from "@tauri-apps/plugin-dialog";
 
   const appWindow = getCurrentWindow();
+  const pressedKeys = new Set();
 
   let canvasEl: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
   let imageData: ImageData;
+  let currentkey: KeyboardEvent;
   let rafId = 0;
 
   async function setupCanvas() {
@@ -27,11 +29,24 @@
     });
 
     if (!path) return;
-    await invoke("load_cartridge", { path: path });
+    await invoke("load_cart", { path: path });
   }
 
   async function frameLoop() {
     try {
+      let a = +pressedKeys.has("KeyJ");
+      let b = +pressedKeys.has("KeyK") << 1;
+      let select = +pressedKeys.has("KeyF") << 2;
+      let start = +pressedKeys.has("KeyH") << 3;
+
+      let up = +pressedKeys.has("KeyW") << 4;
+      let down = +pressedKeys.has("KeyS") << 5;
+      let left = +pressedKeys.has("KeyA") << 6;
+      let right = +pressedKeys.has("KeyD") << 7;
+
+      let joypad1 = right | left | down | up | start | select | b | a;
+      await invoke("update_joypad1", { v: joypad1 });
+
       const buf = await invoke<ArrayBuffer>("get_frame");
       imageData.data.set(new Uint8ClampedArray(buf));
       ctx.putImageData(imageData, 0, 0);
@@ -50,6 +65,11 @@
     cancelAnimationFrame(rafId);
   });
 </script>
+
+<svelte:window
+  onkeydown={(e) => pressedKeys.add(e.code)}
+  onkeyup={(e) => pressedKeys.delete(e.code)}
+/>
 
 <div class="app-container">
   <div class="titlebar">
@@ -209,7 +229,6 @@
 
   .menubar button:hover {
     background-color: lightgrey;
-    border-radius: 2.5px;
     fill: white;
   }
 

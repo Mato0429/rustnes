@@ -1,7 +1,12 @@
 pub mod mapper;
 pub mod mirroring;
 
-use mapper::{MappedCpuRead, MappedCpuWrite, MappedPpuRead, MappedPpuWrite, Mapper, MapperLogic};
+use super::emufile::parse_emufile;
+use anyhow::Ok;
+use mapper::{
+    MappedCpuRead, MappedCpuWrite, MappedPpuRead, MappedPpuWrite, Mapper, MapperArgs, MapperLogic,
+};
+use std::{fs::File, io::BufReader};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PpuRead {
@@ -33,6 +38,30 @@ impl NesCart {
             chrrom: Vec::new(),
             chrram: Vec::new(),
         }
+    }
+
+    pub fn open(path: String) -> anyhow::Result<NesCart> {
+        let file = File::open(path)?;
+        let emufile = parse_emufile(BufReader::new(file))?;
+
+        let args = MapperArgs {
+            vertical_nt: emufile.vertical_nt,
+            alternative_nt: emufile.alternative_nt,
+            chrram_size: emufile.chrram_size,
+            chrrom_size: emufile.chrrom.len() as u32,
+            prgram_size: emufile.prgram_size,
+            prgrom_size: emufile.prgrom.len() as u32,
+        };
+
+        let cart = NesCart {
+            mapper: Mapper::new(emufile.mapper_id, emufile.submapper, args)?,
+            chrram: vec![0u8; emufile.chrram_size as usize],
+            chrrom: emufile.chrrom,
+            prgram: vec![0u8; emufile.prgram_size as usize],
+            prgrom: emufile.prgrom,
+        };
+
+        Ok(cart)
     }
 
     pub fn irq_active(&self) -> bool {

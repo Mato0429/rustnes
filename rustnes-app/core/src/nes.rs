@@ -1,9 +1,11 @@
 pub mod cpu;
 pub mod emufile;
+pub mod joypad;
 pub mod nescart;
 pub mod ppu;
 
 use cpu::Cpu;
+use joypad::Joypad;
 use nescart::{NesCart, PpuRead, PpuWrite};
 use ppu::Ppu;
 
@@ -39,6 +41,8 @@ struct SyncBus<'a> {
     wram: &'a mut [u8; 0x800],
     ppu: &'a mut Ppu,
     vram: &'a mut [u8; 0x800],
+    joypad1: &'a mut Joypad,
+    joypad2: &'a mut Joypad,
 }
 
 impl<'a> cpu::Bus for SyncBus<'a> {
@@ -48,6 +52,11 @@ impl<'a> cpu::Bus for SyncBus<'a> {
 
     fn irq_active(&self) -> bool {
         self.cart.irq_active()
+    }
+
+    fn strobo_joypad(&mut self) {
+        self.joypad1.strobo();
+        self.joypad2.strobo();
     }
 
     fn read(&mut self, addr: u16) -> u8 {
@@ -64,6 +73,8 @@ impl<'a> cpu::Bus for SyncBus<'a> {
             0x2000..=0x3FFF if addr & 0x07 == 4 => self.ppu.read_oamdata(),
             0x2000..=0x3FFF if addr & 0x07 == 7 => self.ppu.read_ppudata(&mut ppubus),
             0x2000..=0x3FFF => 0x00,
+            0x4016 => self.joypad1.read(),
+            0x4017 => self.joypad2.read(),
             0x4000..=0x401F => 0x00,
             0x4020..=u16::MAX => self.cart.cpu_read(addr),
         }
@@ -107,11 +118,13 @@ impl<'a> SyncBus<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Nes {
-    pub cart: NesCart,
-    pub cpu: Cpu,
-    pub wram: [u8; 0x800],
-    pub ppu: Ppu,
-    pub vram: [u8; 0x800],
+    cart: NesCart,
+    cpu: Cpu,
+    wram: [u8; 0x800],
+    ppu: Ppu,
+    vram: [u8; 0x800],
+    joypad1: Joypad,
+    joypad2: Joypad,
 }
 
 impl Nes {
@@ -123,6 +136,8 @@ impl Nes {
             wram: [0u8; 0x800],
             ppu: Ppu::new(),
             vram: [0u8; 0x800],
+            joypad1: Joypad::default(),
+            joypad2: Joypad::default(),
         }
     }
 
@@ -134,19 +149,14 @@ impl Nes {
             wram: &mut self.wram,
             ppu: &mut self.ppu,
             vram: &mut self.vram,
+            joypad1: &mut self.joypad1,
+            joypad2: &mut self.joypad2,
         };
         self.cpu.reset(&mut cpubus);
     }
 
-    pub fn step(&mut self) {
-        let mut cpubus = SyncBus {
-            cart: &mut self.cart,
-            wram: &mut self.wram,
-            ppu: &mut self.ppu,
-            vram: &mut self.vram,
-        };
-
-        self.cpu.step(&mut cpubus);
+    pub fn unload_cart(&mut self) {
+        self.cart = NesCart::empty();
     }
 
     pub fn load_cart(&mut self, cart: NesCart) {
@@ -157,7 +167,26 @@ impl Nes {
         self.ppu.output_frame(buffer);
     }
 
-    pub fn is_frame_ready(&self) -> bool {
-        self.ppu.is_frame_ready()
+    pub fn step_frame(&mut self) {
+        while !self.ppu.is_frame_ready() {
+            self.step_instruction();
+        }
+    }
+
+    pub fn step_instruction(&mut self) {
+        let mut cpubus = SyncBus {
+            cart: &mut self.cart,
+            wram: &mut self.wram,
+            ppu: &mut self.ppu,
+            vram: &mut self.vram,
+            joypad1: &mut self.joypad1,
+            joypad2: &mut self.joypad2,
+        };
+
+        self.cpu.step(&mut cpubus);
+    }
+
+    pub fn update_joypad1(&mut self, v: u8) {
+        self.joypad1.update(v);
     }
 }

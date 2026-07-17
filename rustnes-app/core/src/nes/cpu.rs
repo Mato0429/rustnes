@@ -11,6 +11,8 @@ const STACK_PAGE: u8 = 0x01;
 
 const OAMADDR: u16 = 0x2004;
 const OAMDMA_ADDR: u16 = 0x4014;
+const JOY1_ADDR: u16 = 0x4016;
+const JOY2_ADDR: u16 = 0x4017;
 
 const RESET_VECTOR: u16 = 0xFFFC;
 const NMI_VECTOR: u16 = 0xFFFA;
@@ -26,6 +28,7 @@ const DEFAULT_PC: u16 = 0x8000; // This value is a placeholder. PC is set by the
 pub trait Bus {
     fn nmi_active(&self) -> bool;
     fn irq_active(&self) -> bool;
+    fn strobo_joypad(&mut self);
     fn read(&mut self, addr: u16) -> u8;
     fn write(&mut self, addr: u16, data: u8);
 }
@@ -47,6 +50,7 @@ pub struct Cpu {
 
     oamdma: OamDmaStat,
     is_put_cyc: bool,
+    joypad_strobo: bool,
 }
 
 impl Cpu {
@@ -69,6 +73,7 @@ impl Cpu {
 
             oamdma: OamDmaStat::Disabled,
             is_put_cyc: false,
+            joypad_strobo: false,
         }
     }
 
@@ -125,13 +130,17 @@ impl Cpu {
         u16::from_le_bytes([self.reg.sp, STACK_PAGE])
     }
 
-    fn sync_internal(&mut self) {
+    fn sync_devices(&mut self, bus: &mut impl Bus) {
         self.total_cycle += 1;
         self.is_put_cyc ^= true;
+
+        if self.joypad_strobo {
+            bus.strobo_joypad();
+        }
     }
 
     fn read(&mut self, bus: &mut impl Bus, addr: u16) -> u8 {
-        self.sync_internal();
+        self.sync_devices(bus);
         let byte = bus.read(addr);
 
         if let OamDmaStat::Pending { page } = self.oamdma {
@@ -142,13 +151,15 @@ impl Cpu {
     }
 
     fn write(&mut self, bus: &mut impl Bus, addr: u16, data: u8) {
-        self.sync_internal();
+        self.sync_devices(bus);
 
         if addr == OAMDMA_ADDR {
             // Modify instructions can override the page
             if let OamDmaStat::Disabled | OamDmaStat::Pending { page: _ } = self.oamdma {
                 self.oamdma = OamDmaStat::Pending { page: data };
             };
+        } else if addr == JOY1_ADDR {
+            self.joypad_strobo = data & 0x01 != 0;
         }
 
         bus.write(addr, data);

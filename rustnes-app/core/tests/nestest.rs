@@ -27,6 +27,8 @@ impl Bus for MockBus {
         false
     }
 
+    fn strobo_joypad(&mut self) {}
+
     fn read(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..0x2000 => self.wram[(addr & 0x7FF) as usize],

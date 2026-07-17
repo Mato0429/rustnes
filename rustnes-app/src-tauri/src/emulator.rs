@@ -1,9 +1,8 @@
-use arc_swap::ArcSwap;
 use rustnes_core::nes::nescart::NesCart;
 use rustnes_core::nes::Nes;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const EMU_THREADSTACK: usize = 8 * 1024 * 1024;
@@ -11,48 +10,27 @@ const EMU_FRAMERATE: f64 = 60.0;
 
 pub enum EmuCommand {
     Reset,
-    LoadCart(NesCart),
+    Unload,
+    Load(NesCart),
+    Hotswap(NesCart),
 }
 
 pub struct EmuHandle {
     pub cmd_tx: Sender<EmuCommand>,
+    pub fb: Arc<Mutex<Vec<u8>>>,
+    pub jp1: Arc<AtomicU8>,
 }
 
-pub struct FrameBuffer {
-    pub width: u16,
-    pub height: u16,
-    current: ArcSwap<Vec<u8>>,
-    generation: AtomicU64,
-}
-
-impl FrameBuffer {
-    pub fn new(width: u16, height: u16) -> Self {
-        Self {
-            width,
-            height,
-            current: ArcSwap::from_pointee(vec![0u8; (width as usize) * (height as usize) * 4]),
-            generation: AtomicU64::new(0),
-        }
-    }
-
-    pub fn publish(&self, frame: &[u8]) {
-        self.current.store(Arc::new(frame.to_vec()));
-        self.generation.fetch_add(1, Ordering::Release);
-    }
-
-    pub fn snapshot(&self) -> Arc<Vec<u8>> {
-        self.current.load_full()
-    }
-}
-
-pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<EmuCommand>();
-
+pub fn spawn_emulator_thread() -> EmuHandle {
+    let target = Duration::from_secs_f64(1.0 / EMU_FRAMERATE);
     let mut nes = Nes::new();
     nes.reset();
 
-    let target = Duration::from_secs_f64(1.0 / EMU_FRAMERATE);
-    let mut buffer = vec![0u8; 256 * 240 * 4];
+    let frame = Arc::new(Mutex::new(vec![0u8; 256 * 240 * 4]));
+    let joypad1 = Arc::new(AtomicU8::from(0));
+    let fb = Arc::clone(&frame);
+    let jp1 = Arc::clone(&joypad1);
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<EmuCommand>();
 
     std::thread::Builder::new()
         .name("emuthread".into())
@@ -63,19 +41,21 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     EmuCommand::Reset => nes.reset(),
-                    EmuCommand::LoadCart(cart) => {
+                    EmuCommand::Unload => nes.unload_cart(),
+                    EmuCommand::Hotswap(cart) => nes.load_cart(cart),
+                    EmuCommand::Load(cart) => {
                         nes.load_cart(cart);
                         nes.reset();
                     }
                 }
             }
 
-            while !nes.is_frame_ready() {
-                nes.step();
+            nes.update_joypad1(joypad1.load(Ordering::SeqCst));
+            nes.step_frame();
+            {
+                let mut lock = frame.lock().unwrap();
+                nes.output_frame(&mut lock);
             }
-
-            nes.output_frame(&mut buffer);
-            fb.publish(&buffer);
 
             let elapsed = t0.elapsed();
             if elapsed < target {
@@ -84,5 +64,5 @@ pub fn spawn_emulator_thread(fb: Arc<FrameBuffer>) -> EmuHandle {
         })
         .unwrap();
 
-    EmuHandle { cmd_tx }
+    EmuHandle { cmd_tx, fb, jp1 }
 }
