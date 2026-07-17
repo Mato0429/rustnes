@@ -6,6 +6,7 @@ mod sprite;
 use background::{BgPixLine, BgPixLiner};
 use palette::Palette;
 use registers::{PpuCtrl, PpuMask, PpuScrl, PpuStat};
+use sprite::SprPixLine;
 
 const SYSTEM_PALETTE: &[u8] = include_bytes!("./ppu/2C02G_U_wiki.pal");
 
@@ -30,6 +31,7 @@ pub struct Ppu {
     palette: Palette,
     primary_oam: [u8; 256],
     secondary_oam: [u8; 32],
+    spr_lines: [SprPixLine; 8],
 
     ppudata_buffer: u8,
     write_toggle: bool,
@@ -56,8 +58,9 @@ impl Ppu {
             addr_latch: 0x0000,
 
             palette: Palette::new(),
-            primary_oam: [0xFF; 256],
-            secondary_oam: [0xFF; 32],
+            primary_oam: [0x00; 256],
+            secondary_oam: [0x00; 32],
+            spr_lines: [SprPixLine::default(); 8],
 
             ppudata_buffer: 0x00,
             write_toggle: false,
@@ -123,6 +126,10 @@ impl Ppu {
             self.advance_background_pipeline(bus);
         }
 
+        if enable_spr {
+            self.advance_sprite_pipeline(bus);
+        }
+
         if let (241, 1) = (self.scanline, self.cycle) {
             self.stat.insert(PpuStat::Vblank);
         }
@@ -144,11 +151,38 @@ impl Ppu {
 
     fn render_pixel(&mut self) {
         let bg_pal = self.bg_liner.pixel_index(self.scrl.fine_x);
-        let backdrop_bg =
-            bg_pal & 0x03 == 0 || !self.mask.contains(PpuMask::ShowLeftmostBg) && self.cycle <= 8;
-        let bg_pal = if backdrop_bg { 0x00 } else { bg_pal };
+        let hide_bg = !self.mask.contains(PpuMask::ShowLeftmostBg) && self.cycle <= 8;
+        let bg_color = if hide_bg { 0x00 } else { bg_pal & 0x03 };
 
-        let color = self.palette.read(bg_pal);
+        let mut spr_pal = 0x00;
+        let mut priority = 0;
+        for sprite in self.spr_lines {
+            let dx = (self.cycle as isize - 1) - (sprite.x as isize);
+
+            if (0..=7).contains(&dx) {
+                let p0 = ((sprite.pt_lo << dx) & 0x80 != 0) as u8;
+                let p1 = ((sprite.pt_hi << dx) & 0x80 != 0) as u8;
+                let pt = (p1 << 1) | p0;
+                if pt != 0x00 {
+                    spr_pal = 0x10 | ((sprite.attr & 0x3) << 2) | pt;
+                    priority = (sprite.attr & 0x20) >> 5;
+                    break;
+                }
+            }
+        }
+        let hide_spr = !self.mask.contains(PpuMask::ShowLeftmostSpr) && self.cycle <= 8;
+        let spr_color = if hide_spr { 0x00 } else { spr_pal & 0x03 };
+
+        let pal = match (bg_color, spr_color, priority) {
+            (0, 0, _) => 0x00,
+            (0, _, _) => spr_pal,
+            (_, 0, _) => bg_pal,
+            (_, _, 0) => spr_pal,
+            (_, _, 1) => bg_pal,
+            _ => unreachable!(),
+        };
+
+        let color = self.palette.read(pal);
         self.set_pixel(self.cycle - 1, self.scanline, color);
     }
 

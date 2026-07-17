@@ -45,7 +45,7 @@ impl BgPixLiner {
 impl Ppu {
     pub(super) fn advance_background_pipeline(&mut self, bus: &mut impl Bus) {
         if let (0..=239 | 261, 1..=256 | 321..=336) = (self.scanline, self.cycle) {
-            self.advance_line_fetch(bus)
+            self.advance_bg_line_fetch(bus)
         }
 
         if let (0..=239 | 261, 256) = (self.scanline, self.cycle) {
@@ -63,16 +63,16 @@ impl Ppu {
         }
     }
 
-    fn advance_line_fetch(&mut self, bus: &mut impl Bus) {
+    fn advance_bg_line_fetch(&mut self, bus: &mut impl Bus) {
         self.bg_liner.shift();
 
         match ((self.cycle - 1) % 8) + 1 {
             // nametable fetch
-            1 => self.latch_addr(self.nt_addr()),
+            1 => self.latch_addr(self.bg_nt_addr()),
             2 => self.bg_line.tile_idx = self.fetch(bus),
 
             // attribute fetch
-            3 => self.latch_addr(self.at_addr()),
+            3 => self.latch_addr(self.bg_at_addr()),
             4 => {
                 let at_byte = self.fetch(bus);
                 let [lo, hi] = self.extract_at_from_byte(at_byte);
@@ -81,11 +81,11 @@ impl Ppu {
             }
 
             // pattern lo fetch
-            5 => self.latch_addr(self.pt_addr()),
+            5 => self.latch_addr(self.bg_pt_addr()),
             6 => self.bg_line.pt_lo = self.fetch(bus),
 
             // pattern hi fetch
-            7 => self.latch_addr(self.pt_addr().wrapping_add(8)),
+            7 => self.latch_addr(self.bg_pt_addr().wrapping_add(8)),
             8 => {
                 self.bg_line.pt_hi = self.fetch(bus);
                 self.bg_liner.load_tileline(self.bg_line);
@@ -95,15 +95,15 @@ impl Ppu {
         }
     }
 
-    fn nt_addr(&self) -> u16 {
+    fn bg_nt_addr(&self) -> u16 {
         0x2000 | (self.scrl.v & 0x0FFF)
     }
 
-    fn at_addr(&self) -> u16 {
+    fn bg_at_addr(&self) -> u16 {
         0x23C0 | (self.scrl.v & 0x0C00) | ((self.scrl.v >> 4) & 0x38) | ((self.scrl.v >> 2) & 0x07)
     }
 
-    fn pt_addr(&self) -> u16 {
+    fn bg_pt_addr(&self) -> u16 {
         let table_flag = self.ctrl.contains(PpuCtrl::BgPtTableSelect);
         let table = if table_flag { 0x1000 } else { 0x0000 };
         let fine_y = (self.scrl.v & 0x7000) >> 12;

@@ -201,5 +201,7 @@ impl Cpu {
             let data = self.read(bus, addr);
             self.write(bus, OAMADDR, data);
         }
+
+        self.oamdma = OamDmaStat::Disabled;
     }
 }
