@@ -97,31 +97,18 @@ impl Cpu {
         if !self.prev_nmi && bus.nmi_active() {
             self.read_at_pc(bus);
             self.handle_interrupt(bus, NMI_VECTOR, false);
+            self.prev_nmi = true;
+            return;
         }
         self.prev_nmi = bus.nmi_active();
 
-        // IRQ level detection
         if bus.irq_active() && !self.reg.p.contains(Status::I) {
             self.read_at_pc(bus);
             self.handle_interrupt(bus, IRQ_VECTOR, false);
+            return;
         }
 
         let opcode = self.fetch(bus);
-
-        /*
-        println!(
-            "{:04X} OP:{:02X} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{:}",
-            self.reg.pc,
-            opcode,
-            self.reg.a,
-            self.reg.x,
-            self.reg.y,
-            self.reg.p,
-            self.reg.sp,
-            self.total_cycle
-        );
-        */
-
         let opcode = OPCODE_TABLE[opcode as usize];
         self.exec_opcode(bus, opcode);
     }
@@ -134,7 +121,7 @@ impl Cpu {
         self.total_cycle += 1;
         self.is_put_cyc ^= true;
 
-        if self.joypad_strobo {
+        if self.joypad_strobo && self.is_put_cyc {
             bus.strobo_joypad();
         }
     }

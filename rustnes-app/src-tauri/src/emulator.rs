@@ -61,6 +61,12 @@ pub fn spawn_emulator_thread() -> EmuHandle {
             if elapsed < target {
                 spin_sleep::sleep(target - elapsed);
             }
+
+            /* if target > elapsed {
+                print!("\rtime per frame: {:?}", elapsed);
+            } else {
+                print!("\r\x1b[31mtime per frame: {:?}\x1b[0m", elapsed);
+            }*/
         })
         .unwrap();
 

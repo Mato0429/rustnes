@@ -82,14 +82,6 @@ impl Ppu {
     pub fn read_ppustat(&mut self) -> u8 {
         self.write_toggle = false;
 
-        // DEBUG:
-        if self.scanline == 30 && (self.cycle as isize - 130) < 7 {
-            self.stat.insert(PpuStat::Sprite0Hit);
-        }
-        if self.stat.contains(PpuStat::Vblank) {
-            self.stat.remove(PpuStat::Sprite0Hit);
-        }
-
         let byte = self.stat.bits();
         self.stat.remove(PpuStat::Vblank);
         byte

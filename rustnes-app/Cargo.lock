@@ -2831,6 +2831,7 @@ dependencies = [
  "anyhow",
  "bitflags 2.13.0",
  "enum_dispatch",
+ "modular-bitfield",
 ]
 
 [[package]]

@@ -17,9 +17,16 @@ impl Ppu {
         if let (0..=239, 257..=320) = (self.scanline, self.cycle) {
             self.advance_spr_line_fetch(bus);
         }
+
+        if let (261, 257..=320) = (self.scanline, self.cycle) {
+            self.evaluate_sprite();
+            self.advance_spr_line_fetch(bus);
+        }
     }
 
     fn evaluate_sprite(&mut self) {
+        self.spr0exist = false;
+        self.spr_num = 0;
         self.secondary_oam.fill(0xFF);
 
         let mut sec_spr = 0;
@@ -30,6 +37,11 @@ impl Ppu {
 
             let sprite_y = self.primary_oam[pri_spr * 4];
             if self.is_in_scanline(sprite_y) {
+                self.spr_num += 1;
+                if pri_spr == 0 {
+                    self.spr0exist = true;
+                }
+
                 let sprite = &self.primary_oam[(pri_spr * 4)..(pri_spr * 4 + 4)];
                 self.secondary_oam[(sec_spr * 4)..(sec_spr * 4 + 4)].copy_from_slice(sprite);
                 sec_spr += 1;
@@ -39,12 +51,7 @@ impl Ppu {
 
     fn advance_spr_line_fetch(&mut self, bus: &mut impl Bus) {
         let spr_id = (self.cycle - 257) / 8;
-
-        if 239 <= self.secondary_oam[spr_id * 4] {
-            self.spr_lines[spr_id].pt_lo = 0x00;
-            self.spr_lines[spr_id].pt_hi = 0x00;
-            return;
-        }
+        let is_visible = self.secondary_oam[spr_id * 4] < 239;
 
         match ((self.cycle - 1) % 8) + 1 {
             // copy sprite X
@@ -57,12 +64,17 @@ impl Ppu {
 
             // pattern lo fetch
             5 => self.latch_addr(self.spr_pt_addr(spr_id)),
-            6 => self.spr_lines[spr_id].pt_lo = self.fetch(bus),
+            6 => {
+                let byte = self.fetch(bus);
+                self.spr_lines[spr_id].pt_lo = if is_visible { byte } else { 0x00 };
+            }
 
             // pattern hi fetch
             7 => self.latch_addr(self.spr_pt_addr(spr_id).wrapping_add(8)),
             8 => {
-                self.spr_lines[spr_id].pt_hi = self.fetch(bus);
+                let byte = self.fetch(bus);
+                self.spr_lines[spr_id].pt_hi = if is_visible { byte } else { 0x00 };
+
                 let flipflag = self.spr_lines[spr_id].attr & 0x40 != 0;
                 if flipflag {
                     self.spr_lines[spr_id].pt_hi = self.spr_lines[spr_id].pt_hi.reverse_bits();
@@ -77,15 +89,18 @@ impl Ppu {
         let sprite_y = self.secondary_oam[spr_id * 4];
         let tile_idx = self.secondary_oam[spr_id * 4 + 1];
         let spr_attr = self.secondary_oam[spr_id * 4 + 2];
-        let dy = self.scanline as u8 - sprite_y;
+        // Scanline may be 261(5) here.
+        // See: https://forums.nesdev.org/viewtopic.php?t=26291
+        let dy = (self.scanline as u8).wrapping_sub(sprite_y);
+        let v_flip = spr_attr & 0x80 != 0;
 
         if self.is_8x8sprite() {
-            let dy = if spr_attr & 0x80 != 0 { 7 - dy } else { dy };
+            let dy = if v_flip { 7u8.wrapping_sub(dy) } else { dy };
             let table_flag = self.ctrl.contains(PpuCtrl::SprPtTableSelect);
             let table = if table_flag { 0x1000 } else { 0x0000 };
             table | ((tile_idx as u16) << 4) | dy as u16
         } else {
-            let dy = if spr_attr & 0x80 != 0 { 15 - dy } else { dy };
+            let dy = if v_flip { 15u8.wrapping_sub(dy) } else { dy };
             let table = if tile_idx & 0x01 != 0 { 0x1000 } else { 0x0000 };
             let tile_idx = if 7 < dy {
                 tile_idx | 0x01

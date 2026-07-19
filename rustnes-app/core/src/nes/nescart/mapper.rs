@@ -1,6 +1,7 @@
 mod logic;
 
 mod empty;
+mod mmc3;
 mod nrom;
 
 use anyhow::{anyhow, Result};
@@ -8,6 +9,7 @@ use enum_dispatch::enum_dispatch;
 pub(super) use logic::*;
 
 use empty::Empty;
+use mmc3::Mmc3;
 use nrom::Nrom;
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub struct MapperArgs {
 pub enum Mapper {
     Empty,
     Nrom,
+    Mmc3,
 }
 
 impl Mapper {
@@ -35,6 +38,7 @@ impl Mapper {
     pub fn new(mapper_id: u32, submapper: u8, args: MapperArgs) -> Result<Self> {
         let mapper = match (mapper_id, submapper) {
             (0, _) => Mapper::Nrom(Nrom::new(args)),
+            (4, _) => Mapper::Mmc3(Mmc3::new(args)),
 
             _ => {
                 return Err(anyhow!(

@@ -7,6 +7,7 @@ pub struct Nrom {
     prgram_size: u32,
     prgrom_size: u32,
     chrrom_size: u32,
+    chrram_size: u32,
 }
 
 impl Nrom {
@@ -22,6 +23,7 @@ impl Nrom {
             prgram_size: args.prgram_size,
             prgrom_size: args.prgrom_size,
             chrrom_size: args.chrrom_size,
+            chrram_size: args.chrram_size,
         }
     }
 }
@@ -92,13 +94,13 @@ impl MapperLogic for Nrom {
 
     fn map_ppu_read(&mut self, addr: u16) -> MappedPpuRead {
         match addr {
-            // ChrRom
+            // ChrRom/Ram
             0x0000..=0x1FFF => {
                 let offset = addr as u32;
-                if offset < self.chrrom_size {
-                    MappedPpuRead::ChrRom(offset)
+                if self.chrrom_size == 0 {
+                    MappedPpuRead::ChrRam(offset % self.chrram_size)
                 } else {
-                    MappedPpuRead::Openbus
+                    MappedPpuRead::ChrRom(offset % self.chrrom_size)
                 }
             }
 
@@ -117,8 +119,15 @@ impl MapperLogic for Nrom {
 
     fn map_ppu_write(&mut self, addr: u16, data: u8) -> MappedPpuWrite {
         match addr {
-            // ChrRom
-            0x0000..=0x1FFF => MappedPpuWrite::Other,
+            // ChrRom/Ram
+            0x0000..=0x1FFF => {
+                if self.chrram_size != 0 {
+                    let offset = addr as u32;
+                    MappedPpuWrite::ChrRam(offset % self.chrram_size, data)
+                } else {
+                    MappedPpuWrite::Other
+                }
+            }
 
             // Graphics
             0x2000..=0x2FFF => {

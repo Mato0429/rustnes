@@ -31,7 +31,6 @@ pub struct Ppu {
     palette: Palette,
     primary_oam: [u8; 256],
     secondary_oam: [u8; 32],
-    spr_lines: [SprPixLine; 8],
 
     ppudata_buffer: u8,
     write_toggle: bool,
@@ -43,6 +42,10 @@ pub struct Ppu {
 
     bg_line: BgPixLine,
     bg_liner: BgPixLiner,
+    spr_lines: [SprPixLine; 8],
+    spr0exist: bool,
+
+    spr_num: u8, // Optimization
 }
 
 impl Ppu {
@@ -60,7 +63,6 @@ impl Ppu {
             palette: Palette::new(),
             primary_oam: [0x00; 256],
             secondary_oam: [0x00; 32],
-            spr_lines: [SprPixLine::default(); 8],
 
             ppudata_buffer: 0x00,
             write_toggle: false,
@@ -76,6 +78,9 @@ impl Ppu {
 
             bg_line: BgPixLine::default(),
             bg_liner: BgPixLiner::default(),
+            spr_lines: [SprPixLine::default(); 8],
+            spr0exist: false,
+            spr_num: 0,
         }
     }
 
@@ -102,6 +107,10 @@ impl Ppu {
 
     pub fn nmi_active(&self) -> bool {
         self.stat.contains(PpuStat::Vblank) && self.ctrl.contains(PpuCtrl::NmiEnable)
+    }
+
+    pub fn addr_latch(&self) -> u16 {
+        self.addr_latch
     }
 
     pub fn cpu_step(&mut self, bus: &mut impl Bus) {
@@ -140,6 +149,12 @@ impl Ppu {
             self.stat.remove(PpuStat::SpriteOverflow);
         }
 
+        if let (339, 261) = (self.scanline, self.cycle) {
+            if self.odd_frame {
+                self.reset_frame();
+            }
+        }
+
         self.advance_cycle();
     }
 
@@ -151,26 +166,34 @@ impl Ppu {
 
     fn render_pixel(&mut self) {
         let bg_pal = self.bg_liner.pixel_index(self.scrl.fine_x);
-        let hide_bg = !self.mask.contains(PpuMask::ShowLeftmostBg) && self.cycle <= 8;
+        let hide_bg = !self.mask.contains(PpuMask::ShowLeftmostBg) && self.cycle <= 8
+            || !self.mask.contains(PpuMask::EnableBgRendering);
         let bg_color = if hide_bg { 0x00 } else { bg_pal & 0x03 };
 
         let mut spr_pal = 0x00;
         let mut priority = 0;
-        for sprite in self.spr_lines {
+        for spr_idx in 0..self.spr_num {
+            let sprite = self.spr_lines[spr_idx as usize];
             let dx = (self.cycle as isize - 1) - (sprite.x as isize);
 
             if (0..=7).contains(&dx) {
                 let p0 = ((sprite.pt_lo << dx) & 0x80 != 0) as u8;
                 let p1 = ((sprite.pt_hi << dx) & 0x80 != 0) as u8;
                 let pt = (p1 << 1) | p0;
-                if pt != 0x00 {
+                if pt != 0x0 {
+                    if self.spr0exist && spr_idx == 0 && bg_color != 0x0 {
+                        self.stat.insert(PpuStat::Sprite0Hit);
+                    }
                     spr_pal = 0x10 | ((sprite.attr & 0x3) << 2) | pt;
                     priority = (sprite.attr & 0x20) >> 5;
                     break;
                 }
             }
         }
-        let hide_spr = !self.mask.contains(PpuMask::ShowLeftmostSpr) && self.cycle <= 8;
+
+        let hide_spr = self.scanline == 0
+            || !self.mask.contains(PpuMask::ShowLeftmostSpr) && self.cycle <= 8
+            || !self.mask.contains(PpuMask::EnableSprRendering);
         let spr_color = if hide_spr { 0x00 } else { spr_pal & 0x03 };
 
         let pal = match (bg_color, spr_color, priority) {

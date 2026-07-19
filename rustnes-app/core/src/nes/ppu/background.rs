@@ -57,6 +57,10 @@ impl Ppu {
             self.scrl.v = (self.scrl.v & 0x7BE0) | (self.scrl.t & 0x041F);
         }
 
+        if let (0..=239 | 261, 257..=320) = (self.scanline, self.cycle) {
+            self.advance_bg_dummy_fetch(bus);
+        }
+
         // copy vertical(fineY, coarseY, nametable hi)
         if let (261, 280..=304) = (self.scanline, self.cycle) {
             self.scrl.v = (self.scrl.v & 0x041F) | (self.scrl.t & 0x7BE0);
@@ -91,6 +95,27 @@ impl Ppu {
                 self.bg_liner.load_tileline(self.bg_line);
                 self.increment_coarse_x();
             }
+            _ => unreachable!(),
+        }
+    }
+
+    fn advance_bg_dummy_fetch(&mut self, bus: &mut impl Bus) {
+        self.bg_liner.shift();
+
+        match ((self.cycle - 1) % 8) + 1 {
+            // unused nametable fetch
+            1 => self.latch_addr(self.bg_nt_addr()),
+            2 => self.bg_line.tile_idx = self.fetch(bus),
+
+            // ignored nametable fetch
+            3 => self.latch_addr(self.bg_nt_addr()),
+            4 => {
+                let _ = self.fetch(bus);
+            }
+
+            // do nothing while sprite fetch
+            5..=8 => (),
+
             _ => unreachable!(),
         }
     }
