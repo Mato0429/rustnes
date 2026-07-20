@@ -14,8 +14,10 @@
       {
         "title": "rustnes",
         "decorations": false,
+        "width": 768,
+        "height": 775,
         "minWidth": 256,
-        "minHeight": 260
+        "minHeight": 295
       }
     ],
     "security": {

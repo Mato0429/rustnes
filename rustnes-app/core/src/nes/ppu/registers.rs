@@ -100,7 +100,8 @@ impl Ppu {
         };
 
         // VRAM is buffered regardless of the read destination
-        self.ppudata_buffer = bus.read(self.scrl.v % 0x3F00);
+        self.latch_addr(self.scrl.v % 0x3F00);
+        self.ppudata_buffer = self.fetch(bus);
 
         self.increment_loopy();
         byte

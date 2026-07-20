@@ -42,9 +42,9 @@ impl MapperLogic for Nrom {
 
             // PrgRam
             0x6000..=0x7FFF => {
-                let offset = (addr & 0x1FFF) as u32;
-                if offset < self.prgram_size {
-                    MappedCpuRead::PrgRam(offset)
+                if self.prgram_size != 0 {
+                    let offset = (addr & 0x1FFF) as u32;
+                    MappedCpuRead::PrgRam(offset % self.prgram_size)
                 } else {
                     MappedCpuRead::Openbus
                 }
@@ -78,11 +78,7 @@ impl MapperLogic for Nrom {
             // PrgRam
             0x6000..=0x7FFF => {
                 let offset = (addr & 0x1FFF) as u32;
-                if offset < self.prgram_size {
-                    MappedCpuWrite::PrgRam(offset, data)
-                } else {
-                    MappedCpuWrite::Other
-                }
+                MappedCpuWrite::PrgRam(offset % self.prgram_size, data)
             }
 
             // PrgRom

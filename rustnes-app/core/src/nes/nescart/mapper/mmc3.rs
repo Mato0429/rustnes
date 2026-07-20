@@ -90,7 +90,10 @@ impl Mmc3 {
             (true, false, false) => self.irq_latch = data,
 
             // IRQ reload
-            (true, false, true) => self.require_reload = true,
+            (true, false, true) => {
+                self.irq_counter = 0;
+                self.require_reload = true
+            }
 
             // IRQ disable
             (true, true, false) => self.irq_enable = false,
@@ -106,8 +109,8 @@ impl Mmc3 {
         // Valid edge
         if 3 <= self.a12_streak && a12_active {
             if self.irq_counter == 0 || self.require_reload {
-                self.require_reload = false;
                 self.irq_counter = self.irq_latch;
+                self.require_reload = false;
             } else {
                 self.irq_counter = self.irq_counter.wrapping_sub(1);
             }
@@ -116,52 +119,65 @@ impl Mmc3 {
         if a12_active {
             self.a12_streak = 0;
         } else {
-            self.a12_streak = self.a12_streak.wrapping_add(1);
+            self.a12_streak = self.a12_streak.saturating_add(1);
         }
     }
 
-    fn prgrom_addr(&self, addr: u16) -> u32 {
-        let swapped_addr = match addr {
-            _ if !self.prgswap => addr,
-            0x8000..=0x9FFF => addr + 0x4000,
-            0xC000..=0xDFFF => addr - 0x4000,
-            _ => addr,
+    fn prg_addr(&self, addr: u16) -> u32 {
+        let banks = (self.prgrom_size / PRGBANK_SIZE) as u8;
+
+        let bank = if !self.prgswap {
+            match addr {
+                0x8000..=0x9FFF => self.r[6],
+                0xA000..=0xBFFF => self.r[7],
+                0xC000..=0xDFFF => banks - 2,
+                0xE000..=0xFFFF => banks - 1,
+                _ => unreachable!(),
+            }
+        } else {
+            match addr {
+                0x8000..=0x9FFF => self.r[7],
+                0xA000..=0xBFFF => banks - 2,
+                0xC000..=0xDFFF => self.r[6],
+                0xE000..=0xFFFF => banks - 1,
+                _ => unreachable!(),
+            }
         };
 
-        let base_addr = match swapped_addr {
-            0x8000..=0x9FFF => self.r[6] as u32 * PRGBANK_SIZE,
-            0xA000..=0xBFFF => self.r[7] as u32 * PRGBANK_SIZE,
-            0xC000..=0xDFFF => self.prgrom_size - PRGBANK_SIZE * 2,
-            0xE000..=u16::MAX => self.prgrom_size - PRGBANK_SIZE,
-            _ => unreachable!(),
-        };
-
-        base_addr | (addr as u32 & 0x1FFF)
+        bank as u32 * PRGBANK_SIZE + (addr as u32 & 0x1FFF)
     }
 
-    fn chrrom_addr(&self, addr: u16) -> u32 {
-        let swapped_addr = if self.chrswap {
-            (addr + 0x1000) % 0x2000
+    fn chr_addr(&self, addr: u16) -> u32 {
+        let bank = if !self.chrswap {
+            match addr {
+                0x0000..=0x07FF => self.r[0] & 0xFE,
+                0x0800..=0x0FFF => self.r[1] & 0xFE,
+                0x1000..=0x13FF => self.r[2],
+                0x1400..=0x17FF => self.r[3],
+                0x1800..=0x1BFF => self.r[4],
+                0x1C00..=0x1FFF => self.r[5],
+                _ => unreachable!(),
+            }
         } else {
-            addr
+            match addr {
+                0x0000..=0x07FF => self.r[2],
+                0x0800..=0x0FFF => self.r[3],
+                0x1000..=0x13FF => self.r[4],
+                0x1400..=0x17FF => self.r[5],
+                0x1800..=0x1BFF => self.r[0] & 0xFE,
+                0x1C00..=0x1FFF => self.r[1] & 0xFE,
+                _ => unreachable!(),
+            }
         };
 
-        let base_addr = match swapped_addr {
-            0x0000..=0x07FF => (self.r[0] & 0xFE) as u32 * CHRBANK_SIZE,
-            0x0800..=0x0FFF => (self.r[1] & 0xFE) as u32 * CHRBANK_SIZE,
-            0x1000..=0x13FF => self.r[2] as u32 * CHRBANK_SIZE,
-            0x1400..=0x17FF => self.r[3] as u32 * CHRBANK_SIZE,
-            0x1800..=0x1BFF => self.r[4] as u32 * CHRBANK_SIZE,
-            0x1C00..=0x1FFF => self.r[5] as u32 * CHRBANK_SIZE,
-            _ => unreachable!(),
-        };
+        let is_2kb = !self.chrswap && (0x0000..=0x0FFF).contains(&addr)
+            || self.chrswap && (0x1800..=0x1FFF).contains(&addr);
 
-        let offset = match swapped_addr {
-            0x0000..=0x0FFF => addr as u32 & 0x07FF,
-            _ => addr as u32 & 0x03FF,
-        };
-
-        base_addr + offset
+        if is_2kb {
+            bank as u32 * CHRBANK_SIZE + (addr as u32 & 0x7FF)
+        } else {
+            bank as u32 * CHRBANK_SIZE + (addr as u32 & 0x3FF)
+        }
     }
 }
 
@@ -194,7 +210,7 @@ impl MapperLogic for Mmc3 {
 
             // PrgRom
             0x8000..=u16::MAX => {
-                let offset = self.prgrom_addr(addr);
+                let offset = self.prg_addr(addr);
                 if offset < self.prgrom_size {
                     MappedCpuRead::PrgRom(offset)
                 } else {
@@ -238,7 +254,7 @@ impl MapperLogic for Mmc3 {
         match addr {
             // ChrRom/Ram
             0x0000..=0x1FFF => {
-                let offset = self.chrrom_addr(addr);
+                let offset = self.chr_addr(addr);
                 if self.chrrom_size == 0 {
                     MappedPpuRead::ChrRam(offset % self.chrram_size)
                 } else {
@@ -266,7 +282,7 @@ impl MapperLogic for Mmc3 {
             // ChrRom/Ram
             0x0000..=0x1FFF => {
                 if self.chrram_size != 0 {
-                    let offset = self.chrrom_addr(addr);
+                    let offset = self.chr_addr(addr);
                     MappedPpuWrite::ChrRam(offset % self.chrram_size, data)
                 } else {
                     MappedPpuWrite::Other

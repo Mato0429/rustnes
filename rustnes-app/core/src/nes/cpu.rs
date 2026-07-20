@@ -45,6 +45,8 @@ pub struct Cpu {
     pub is_jammed: bool,
     pub total_cycle: u128,
     pub prev_nmi: bool,
+    irq_sample: bool,
+    nmi_sample: bool,
 
     pub reg: Register,
 
@@ -61,6 +63,8 @@ impl Cpu {
             is_jammed: false,
             total_cycle: 0,
             prev_nmi: false,
+            irq_sample: false,
+            nmi_sample: false,
 
             reg: Register {
                 a: DEFAULT_A,
@@ -94,15 +98,14 @@ impl Cpu {
     pub fn step(&mut self, bus: &mut impl Bus) {
         // TODO: On the actual nes, interrupts is polled before the final cycle of steps
         // NMI edge detection
-        if !self.prev_nmi && bus.nmi_active() {
+        if self.nmi_sample {
             self.read_at_pc(bus);
             self.handle_interrupt(bus, NMI_VECTOR, false);
-            self.prev_nmi = true;
+            self.nmi_sample = false;
             return;
         }
-        self.prev_nmi = bus.nmi_active();
 
-        if bus.irq_active() && !self.reg.p.contains(Status::I) {
+        if self.irq_sample && !self.reg.p.contains(Status::I) {
             self.read_at_pc(bus);
             self.handle_interrupt(bus, IRQ_VECTOR, false);
             return;
@@ -117,7 +120,16 @@ impl Cpu {
         u16::from_le_bytes([self.reg.sp, STACK_PAGE])
     }
 
-    fn sync_devices(&mut self, bus: &mut impl Bus) {
+    fn sample_interrupt(&mut self, bus: &mut impl Bus) {
+        if !self.prev_nmi && bus.nmi_active() {
+            self.nmi_sample = true;
+        }
+        self.prev_nmi = bus.nmi_active();
+
+        self.irq_sample = bus.irq_active();
+    }
+
+    fn sync_cycle(&mut self, bus: &mut impl Bus) {
         self.total_cycle += 1;
         self.is_put_cyc ^= true;
 
@@ -127,7 +139,9 @@ impl Cpu {
     }
 
     fn read(&mut self, bus: &mut impl Bus, addr: u16) -> u8 {
-        self.sync_devices(bus);
+        self.sync_cycle(bus);
+        self.sample_interrupt(bus);
+
         let byte = bus.read(addr);
 
         if let OamDmaStat::Pending { page } = self.oamdma {
@@ -138,7 +152,8 @@ impl Cpu {
     }
 
     fn write(&mut self, bus: &mut impl Bus, addr: u16, data: u8) {
-        self.sync_devices(bus);
+        self.sync_cycle(bus);
+        self.sample_interrupt(bus);
 
         if addr == OAMDMA_ADDR {
             // Modify instructions can override the page

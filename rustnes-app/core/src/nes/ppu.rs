@@ -129,13 +129,8 @@ impl Ppu {
             if let (0..=239, 1..=256) = (self.scanline, self.cycle) {
                 self.render_pixel();
             }
-        }
 
-        if enable_bg {
             self.advance_background_pipeline(bus);
-        }
-
-        if enable_spr {
             self.advance_sprite_pipeline(bus);
         }
 
