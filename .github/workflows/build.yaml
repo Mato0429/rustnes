@@ -1,4 +1,4 @@
-name: 'build-windows'
+name: 'build-windows-macos'
 
 on:
   push:
@@ -14,6 +14,8 @@ jobs:
         include:
           - platform: 'windows-latest'
             args: ''
+          - platform: 'macos-latest'
+            args: '
 
     runs-on: ${{ matrix.platform }}
     permissions:
