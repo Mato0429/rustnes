@@ -14,8 +14,10 @@ jobs:
         include:
           - platform: 'windows-latest'
             args: ''
-          - platform: 'macos-13'
-            args: ''
+            rust_targets: 'x86_64-pc-windows-msvc'
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
     permissions:
@@ -35,6 +37,8 @@ jobs:
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
 
       - name: install frontend dependencies
         working-directory: ./rustnes-app
