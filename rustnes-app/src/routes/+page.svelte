@@ -34,7 +34,7 @@
 
   async function frameLoop() {
     try {
-      let a = (+pressedKeys.has("KeyJ") || (+pressedKeys.has("KeyZ");
+      let a = +pressedKeys.has("KeyJ") || (+pressedKeys.has("KeyZ");
       let b = (+pressedKeys.has("KeyK") || (+pressedKeys.has("KeyX"))<< 1;
       let select = +pressedKeys.has("KeyF") << 2;
       let start = +pressedKeys.has("KeyH") << 3;
