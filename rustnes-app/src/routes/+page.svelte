@@ -39,10 +39,10 @@
       let select = +pressedKeys.has("KeyF") << 2;
       let start = +pressedKeys.has("KeyH") << 3;
 
-      let up = +pressedKeys.has("KeyW") << 4;
-      let down = +pressedKeys.has("KeyS") << 5;
-      let left = +pressedKeys.has("KeyA") << 6;
-      let right = +pressedKeys.has("KeyD") << 7;
+      let up = (+pressedKeys.has("KeyW") || +pressedKeys.has("ArrowUp")) << 4;
+      let down = (+pressedKeys.has("KeyS") || +pressedKeys.has("ArrowDown"))<< 5;
+      let left = (+pressedKeys.has("KeyA") || +pressedKeys.has("ArrowLeft")) << 6;
+      let right = (+pressedKeys.has("KeyD") || +pressedKeys.has("ArrowRight"))<< 7;
 
       let joypad1 = right | left | down | up | start | select | b | a;
       await invoke("update_joypad1", { v: joypad1 });
